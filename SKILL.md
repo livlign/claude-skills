@@ -11,7 +11,7 @@ The skill's quality comes from the **discovery dialog**, not from templates. Eve
 
 ## Phases
 
-1. **Discovery** — scan the repo, summarize findings, recommend a format (animated vs static), ask about vibe/audience/hero moment, propose 2–3 scenarios, converge on a brief.
+1. **Discovery** — pick operating mode (Auto / Semi-auto / Manual, §1.1a), scan the repo, summarize findings, recommend a format (animated vs static), ask about vibe/audience/hero moment, propose 2–3 scenarios, converge on a brief. The mode controls *how many* of these the user answers vs. Claude decides silently — it does not skip any of the craft checks.
 2. **Build** — write HTML/CSS/JS for the chosen scenario. For static, design one decisive frame; for animated, a loop. No storyboard step.
 3. **Preview & iterate** — open the HTML in the user's default browser, iterate in text until the user says ship.
 4. **Export** — animated → Puppeteer screencast + ffmpeg palette pipeline to GIF. Static → Puppeteer `page.screenshot` to PNG (with `deviceScaleFactor: 2` for retina crispness).
@@ -26,6 +26,47 @@ Discovery runs **before any HTML is written**. Its job: go from a vague ask ("ma
 ### 1.1 Activation
 
 Enter discovery mode whenever the user invokes the skill, **unless** they explicitly say "skip discovery, I have the brief ready."
+
+### 1.1a Operating mode (ask first, once per run)
+
+Before anything else — before the scan summary, before any direction questions — ask the user which operating mode they want for this run. Use the `AskUserQuestion` tool so the choice is structured and visible, not buried in free text. Offer three modes; describe each in concrete terms (what gets asked, what gets decided silently) and include pros/cons so the user can pick with open eyes. Default recommendation: **Semi-auto**.
+
+> Note: this "operating mode" is a skill-level concept about how many questions the skill asks. It is distinct from the Claude Code harness's own auto-mode; the two do not replace each other.
+
+Question shape:
+
+```
+AskUserQuestion({
+  questions: [{
+    header: "Run mode",
+    question: "How involved do you want to be in this run? This affects how many decisions I ask you to make before we ship an artifact.",
+    multiSelect: false,
+    options: [
+      {
+        label: "Semi-auto (Recommended)",
+        description: "I decide vibe, audience, scenario, dimensions, copy. You decide: output format (GIF/PNG/HTML), one preview-and-iterate review before export, and the final User scorecard. ~3 decisions. Pros: fast, keeps production-grade gate, keeps your taste in the loop on the things that matter most. Cons: you miss input on smaller creative calls."
+      },
+      {
+        label: "Manual",
+        description: "I ask you at every decision point — scenario pick, vibe confirmation, brief approval, preview iteration rounds, export ship-intent, full Phase 6 scorecard. I still make suggestions and recommendations at each step. Pros: max control, highest ceiling on quality. Cons: slow — 8–12 back-and-forths before an artifact."
+      },
+      {
+        label: "Auto",
+        description: "I make every decision and go straight to the exported artifact (GIF or PNG, my call). I still run Code + AI eval and deliver a scorecard, but skip User scorecard questions and skip the mid-run preview gate. Pros: hands-off, 0 decisions, fastest path to a shippable draft. Cons: lower quality ceiling, more risk of missing your taste or the repo's real scope; expect to redirect after seeing the result."
+      }
+    ]
+  }]
+})
+```
+
+Rules that apply to **every** mode regardless of choice (craft non-negotiables):
+
+- **§1.3 inventory count is always collected.** Auto/semi don't skip it.
+- **§4.0 scope-match rule is always enforced.** If the hero says "all" or shows a grid, on-screen reality must match the real inventory — regardless of mode.
+- **Phase 6 Code + AI eval always runs.** Only User ratings are skipped in Auto mode.
+- **Any mode can be upgraded mid-run.** If Auto drifts, user can say "stop, switch to semi" and we resume from the nearest decision point. Do not silently re-ask everything; pick up at the next unanswered question.
+
+After the user picks a mode, commit it to memory for the run (e.g. "Mode: Semi-auto") and reference it when deciding whether to ask or decide silently at each subsequent step. In Auto and Semi-auto, make decisions with a brief one-line note ("going with the Product-UI marketing archetype per §1.4c — amplication-shape repo") so the user can redirect if they disagree.
 
 ### 1.2 Input triage
 
@@ -127,8 +168,9 @@ Move to the build phase when all six are settled:
 - [ ] Duration chosen — animated only (typical: 15–25s loop; default 20s); skip for static
 - [ ] Dimensions chosen (see §1.7 — NOT a fixed default; pick per repo and placement)
 - [ ] Real inventory count captured from §1.3 scan (if the repo has a countable collection)
+- [ ] Operating mode recorded from §1.1a (Auto / Semi-auto / Manual)
 
-Write the brief back to the user in a compact block. Wait for **"go"** before writing any HTML.
+Write the brief back to the user in a compact block. Wait for **"go"** before writing any HTML — *unless* the mode is **Auto**, in which case proceed directly to Phase 2 with a brief summary line and no wait. In **Semi-auto**, show the brief but proceed after a brief pause unless the user interjects. In **Manual**, wait explicitly for "go".
 
 ### 1.7 Dimension selection
 
@@ -271,14 +313,18 @@ When you spot a mismatch, flag it proactively ("the README leans 'fast' but the 
 
 ### 4.0 Entry gate — do not skip
 
-Before you export anything, confirm **all four**:
+Before you export anything, confirm — the exact gate depends on operating mode (§1.1a):
 
-1. The user has actually **seen the artifact running** in a browser (or a rendered screenshot for static).
-2. There has been at least **one round of iteration** after that first look — typography, pacing, copy, density, *something*. A first-draft that the user says is fine usually isn't; prompt specifically for what to improve.
-3. For any hero claim about scope (*"all"*, *"every"*, *"the whole"*, or any grid/list meant to represent the repo), the on-screen reality **matches the real inventory** captured in §1.3. If the real count exceeds the grid, the grid must explicitly frame itself as a sample ("10 of 30 shown", scrolling affordance, "30+") — not silently undercount.
-4. User has explicitly said ship / go / export. Not just "looks good" — an intent to export.
+| Gate item | Manual | Semi-auto | Auto |
+|---|---|---|---|
+| User has **seen the artifact running** (open in browser or rendered screenshot) | required | required | skipped |
+| At least **one iteration round** after first look | required | required | skipped |
+| **Scope match** — hero claims (*"all"*, *"every"*, grid/list representing the repo) match real inventory from §1.3, or explicitly framed as sample ("10 of 30", "30+", scroll affordance) | **required** | **required** | **required** |
+| User has explicitly said ship / go / export | required | required (after 1 preview) | not required |
 
-Export is the **last** step, not a midpoint. A capture→encode→evaluate cycle feels productive but burns the user's patience on a draft that wasn't ready. When in doubt between "export this pass" and "one more iteration", prefer the iteration.
+The scope-match rule is **non-negotiable in every mode** — it's a craft check, not a human-involvement question. The human-in-the-loop items are what modes toggle.
+
+Export is the **last** step, not a midpoint. A capture→encode→evaluate cycle feels productive but burns the user's patience on a draft that wasn't ready. When in doubt between "export this pass" and "one more iteration", prefer the iteration — except in Auto mode, where the point is to deliver a first draft fast and let the user redirect.
 
 ### 4.1 Prerequisites (ask before installing)
 
@@ -534,7 +580,9 @@ Assemble in four steps:
    > **At the end, for any score ≥ 4, answer: "what specific change would push this to 5?" If you have an answer, lower the score by one.**
 
 3. **Fill Claude's repo-fidelity row** with a one-sentence justification.
-4. **Ask the user** for the 3 User rows via the `AskUserQuestion` tool — not a free-text prompt. Use four questions in one call: Hero moment delivery, Visual impact, Ship-worthiness, and a fourth free-text-via-Other for the one-line feedback. Structure each rating question with four labeled options matching the scale (omit 5 to fit the 4-option max; users can pick "Other" to enter 5/Excellent or a custom score). Example shape:
+4. **Ask the user** for the 3 User rows via the `AskUserQuestion` tool — **in Manual and Semi-auto only**. In **Auto** mode, skip the User rows entirely; compute the overall average from Code + AI + Claude rows alone and flag in the run file that User ratings were not collected (so the evaluations index can weight it correctly).
+
+   Use four questions in one call: Hero moment delivery, Visual impact, Ship-worthiness, and a fourth free-text-via-Other for the one-line feedback. Structure each rating question with four labeled options matching the scale (omit 5 to fit the 4-option max; users can pick "Other" to enter 5/Excellent or a custom score). Example shape:
 
    ```
    AskUserQuestion({
