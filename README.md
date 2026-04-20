@@ -56,6 +56,14 @@ Use the **Linux** commands above. WSL runs under its own home directory (`~` ins
 
 Restart Claude Code (or start a new session) — the skill is auto-discovered. Invoke it by asking Claude to "make a hero visual for this repo," or run `/repo-visuals` directly.
 
+### Updating to a newer version
+
+```bash
+cd ~/.claude/skills/repo-visuals && git pull && npm install
+```
+
+Then restart Claude Code (or start a new session) so the updated `SKILL.md` is re-read. If you symlinked from a clone elsewhere, run the same commands in that clone.
+
 ## Getting started
 
 1. Invoke the skill and give it a target: a GitHub URL, a local path, or a free-text brief.
