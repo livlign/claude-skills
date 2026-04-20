@@ -4,6 +4,32 @@ A Claude Code skill for producing hero visuals — **animated GIF** or **static 
 
 The skill scans the target repo, recommends a format (animated vs static) based on the repo's identity, then generates bespoke HTML per repo via a structured discovery dialog, previews it in the browser, and exports to an optimized GIF or retina PNG. The user picks an operating mode at the start (Auto / Semi-auto / Manual) to control how many decisions the skill asks before shipping.
 
+## Install
+
+Install as a user-level Claude Code skill (available in every project):
+
+```bash
+git clone https://github.com/livlign/repo-visuals.git ~/.claude/skills/repo-visuals \
+  && cd ~/.claude/skills/repo-visuals \
+  && npm install
+```
+
+Or, if you've already cloned the repo somewhere else, symlink it:
+
+```bash
+ln -s "$(pwd)" ~/.claude/skills/repo-visuals && npm install
+```
+
+Then install the system dependency:
+
+```bash
+brew install ffmpeg       # macOS
+# apt install ffmpeg      # Debian/Ubuntu
+# choco install ffmpeg    # Windows
+```
+
+Restart Claude Code (or start a new session) and the skill will be auto-discovered. Invoke it with `/repo-visuals` or by asking Claude to "make a hero visual for this repo."
+
 ## Getting started
 
 1. Invoke the skill and give it a target: a GitHub URL, a local path, or a free-text brief.
