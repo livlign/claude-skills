@@ -17,6 +17,8 @@ The skill's quality comes from the **discovery dialog**, not from templates. Eve
 4. **Export** — animated → Puppeteer screencast + ffmpeg palette pipeline to GIF. Static → Puppeteer `page.screenshot` to PNG (with `deviceScaleFactor: 2` for retina crispness).
 5. **Output** — place the hero in the target repo; optionally open a PR that embeds it in the README.
 
+**Dev mode (author-only):** Phase 6 — Evaluate exists but **only runs in dev mode**. Dev mode is for the skill's author iterating on the skill itself; it collects scorecard data and writes run logs under `<skill-dir>/evaluations/`. Enable it only when the user explicitly says "dev mode" (or sets `REPO_VISUALS_DEV=1`). In every normal run — including Manual, Semi-auto, and Auto — the skill ends after Phase 5. Do not mention Phase 6 to end users.
+
 ---
 
 ## Phase 1 — Discovery
@@ -44,15 +46,15 @@ AskUserQuestion({
     options: [
       {
         label: "Semi-auto (Recommended)",
-        description: "I decide vibe, audience, scenario, dimensions, copy. You decide: output format (GIF/PNG/HTML), one preview-and-iterate review before export, and the final User scorecard. ~3 decisions. Pros: fast, keeps production-grade gate, keeps your taste in the loop on the things that matter most. Cons: you miss input on smaller creative calls."
+        description: "I decide vibe, audience, scenario, dimensions, copy. You decide: output format (GIF/PNG/HTML) and one preview-and-iterate review before export. ~2 decisions. Pros: fast, keeps production-grade gate, keeps your taste in the loop on the things that matter most. Cons: you miss input on smaller creative calls."
       },
       {
         label: "Manual",
-        description: "I ask you at every decision point — scenario pick, vibe confirmation, brief approval, preview iteration rounds, export ship-intent, full Phase 6 scorecard. I still make suggestions and recommendations at each step. Pros: max control, highest ceiling on quality. Cons: slow — 8–12 back-and-forths before an artifact."
+        description: "I ask you at every decision point — scenario pick, vibe confirmation, brief approval, preview iteration rounds, export ship-intent. I still make suggestions and recommendations at each step. Pros: max control, highest ceiling on quality. Cons: slow — 8–12 back-and-forths before an artifact."
       },
       {
         label: "Auto",
-        description: "I make every decision and go straight to the exported artifact (GIF or PNG, my call). I still run Code + AI eval and deliver a scorecard, but skip User scorecard questions and skip the mid-run preview gate. Pros: hands-off, 0 decisions, fastest path to a shippable draft. Cons: lower quality ceiling, more risk of missing your taste or the repo's real scope; expect to redirect after seeing the result."
+        description: "I make every decision and go straight to the exported artifact (GIF or PNG, my call). Pros: hands-off, 0 decisions, fastest path to a shippable draft. Cons: lower quality ceiling, more risk of missing your taste or the repo's real scope; expect to redirect after seeing the result."
       }
     ]
   }]
@@ -63,7 +65,6 @@ Rules that apply to **every** mode regardless of choice (craft non-negotiables):
 
 - **§1.3 inventory count is always collected.** Auto/semi don't skip it.
 - **§4.0 scope-match rule is always enforced.** If the hero says "all" or shows a grid, on-screen reality must match the real inventory — regardless of mode.
-- **Phase 6 Code + AI eval always runs.** Only User ratings are skipped in Auto mode.
 - **Any mode can be upgraded mid-run.** If Auto drifts, user can say "stop, switch to semi" and we resume from the nearest decision point. Do not silently re-ask everything; pick up at the next unanswered question.
 
 After the user picks a mode, commit it to memory for the run (e.g. "Mode: Semi-auto") and reference it when deciding whether to ask or decide silently at each subsequent step. In Auto and Semi-auto, make decisions with a brief one-line note ("going with the Product-UI marketing archetype per §1.4c — amplication-shape repo") so the user can redirect if they disagree.
@@ -237,6 +238,7 @@ Single self-contained file. No build step. Sections:
 - **Palette**: pick 4–6 colors. More kills GIF compression *and* looks busy.
 - **Loop seam**: the last frame should visually match the first (or transition back smoothly). `runLoop()` is the hard reset if needed.
 - **Determinism**: no `Math.random()` without a seed, no `Date.now()`-based logic. Everything must replay identically each capture.
+- **Avoid the NY Times / editorial-newspaper theme**: no serif-headline + rule-lines + dateline + column-grid pastiche. It's become a default AI-design shortcut and reads as generic. Pick a visual language that actually suits the repo's domain (terminal, data-viz, spatial, playful, brutalist, neon, etc.) — not a broadsheet aesthetic unless the repo is explicitly about journalism or publishing.
 
 ### 2.5 When to stop writing and preview
 
@@ -280,6 +282,7 @@ Don't ask about colors/fonts/spacing on the first round. Polish comes after shap
 - Each round: Claude edits, user refreshes, one sentence of reaction.
 - After shape converges, switch to polish rounds: type hierarchy, color calibration, micro-timing, loop seam.
 - If user gives vague feedback ("feels off"), ask **one pointed question** to narrow it — don't guess.
+- **Style stuck? Invoke `frontend-design`.** If the user has gone back-and-forth on *style* (palette, type, overall aesthetic, visual language) for **3+ rounds** without converging — or says something like "still not it" / "try a totally different direction" — stop tweaking in place. Invoke the `frontend-design` skill via the `Skill` tool to get a fresh, high-quality design pass. Pass it the brief, the repo scan summary, the current `index.html`, and a plain-language description of what's not working. Use its output as the new starting point, then return to this iteration loop. Don't invoke it for pacing, timing, or animation-logic feedback — only when the blocker is *visual design quality*.
 
 ### 3.4 Mid-build GIF sanity check *(only if GIF is a target output)*
 
@@ -501,9 +504,11 @@ If the user doesn't want a PR, leave `hero.gif` at `repo-visuals-work/hero.gif` 
 
 ---
 
-## Phase 6 — Evaluate
+## Phase 6 — Evaluate *(dev mode only — skip in normal runs)*
 
-Score the **final artifact**, not the process. Always runs at the end of every work.
+**Gate:** run this phase only when dev mode is active (user said "dev mode" this run, or `REPO_VISUALS_DEV=1`). In every other run — Manual, Semi-auto, Auto — stop after Phase 5. Do not ask user-rating questions, do not write run logs, do not mention this phase.
+
+Score the **final artifact**, not the process. In dev mode, always runs at the end.
 
 ### 6.1 Criteria (four rater types)
 
