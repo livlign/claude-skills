@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DevToolKit — hero</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #f8fafc;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --card: #ffffff;
+    --brand: #2563eb;
+    --brand-soft: #dbeafe;
+    --ok: #16a34a;
+    --violet: #7c3aed;
+    --emerald: #059669;
+    --amber: #d97706;
+    --pink: #db2777;
+    --cyan: #0891b2;
+    --rose: #e11d48;
+  }
+
+  html, body { margin: 0; padding: 0; background: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; color: var(--ink); }
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; }
+
+  .stage {
+    width: 1200px; height: 675px;
+    background: var(--bg);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(15,23,42,.18);
+    border-radius: 14px;
+  }
+
+  /* ---------- Browser chrome ---------- */
+  .chrome {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+  }
+  .chrome-bar {
+    height: 44px; flex: 0 0 44px;
+    background: #f1f5f9;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; padding: 0 16px; gap: 10px;
+  }
+  .dots { display: flex; gap: 7px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #ef4444; } .dot.y { background: #eab308; } .dot.g { background: #22c55e; }
+  .url {
+    margin-left: 16px; flex: 1; max-width: 560px;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 14px; font: 500 13px 'JetBrains Mono', monospace; color: var(--ink-2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .url .lock { color: var(--ok); font-size: 11px; }
+  .chrome-body {
+    flex: 1; position: relative;
+  }
+
+  /* ---------- Ambient badges ---------- */
+  .badge {
+    position: absolute; z-index: 10;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 7px 14px;
+    font: 600 12px 'JetBrains Mono', monospace;
+    display: flex; align-items: center; gap: 8px;
+    color: var(--ink-2);
+    box-shadow: 0 2px 10px rgba(15,23,42,.06);
+  }
+  .badge .pip {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 0 rgba(22,163,74,.6);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(22,163,74,.5); }
+    70%  { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
+    100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+  }
+  .badge.tl { top: 60px; left: 24px; }
+  .badge.tr { top: 60px; right: 24px; }
+  .badge.br { bottom: 24px; right: 24px; background: var(--ink); color: #fff; border-color: var(--ink); }
+  .badge.br .pip { background: #4ade80; }
+
+  /* ---------- Tool workspace ---------- */
+  .workspace {
+    position: absolute; inset: 100px 24px 70px 24px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(15,23,42,.06);
+    overflow: hidden;
+  }
+  .tool-head {
+    height: 48px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; padding: 0 18px; gap: 12px;
+    background: #fbfdff;
+  }
+  .tool-head .icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 14px 'JetBrains Mono', monospace; color: #fff;
+  }
+  .tool-head .name { font: 600 14px Inter; color: var(--ink); }
+  .tool-head .badge-mini {
+    margin-left: auto;
+    font: 500 11px 'JetBrains Mono', monospace;
+    padding: 3px 9px; border-radius: 999px;
+    background: var(--brand-soft); color: var(--brand);
+  }
+  .tool-body { position: relative; height: calc(100% - 48px); }
+
+  /* each scene panel stacks absolutely */
+  .scene { position: absolute; inset: 0; opacity: 0; transform: translateY(10px); transition: opacity .35s ease, transform .35s ease; }
+  .scene.active { opacity: 1; transform: translateY(0); }
+
+  /* scene hero headline (per-tool value prop) */
+  .scene-hero {
+    position: absolute; left: 0; right: 0; top: 0;
+    height: 62px;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0 26px;
+    background: linear-gradient(180deg, #fbfdff 0%, #fff 100%);
+    border-bottom: 1px solid var(--line);
+    z-index: 5;
+  }
+  .scene-hero .kicker {
+    font: 600 10px 'JetBrains Mono', monospace;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .scene-hero h2 {
+    margin: 0;
+    font: 700 22px Inter;
+    color: var(--ink);
+    letter-spacing: -.01em;
+  }
+  .scene-hero h2 .hl { color: var(--brand); }
+  .scene-hero h2 .zero { color: var(--ok); font-variant-numeric: tabular-nums; }
+  /* shift all scene sub-content below the hero strip */
+  .scene .sql-panel,
+  .scene .json-panel,
+  .scene .diag-panel,
+  .scene .cron-panel,
+  .scene .color-panel,
+  .scene .jwt-panel,
+  .scene .grid-scene { padding-top: 62px !important; height: 100%; box-sizing: border-box; }
+
+  /* ---- Scene: SQL ---- */
+  .sql-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 0; height: 100%; }
+  .sql-side { padding: 18px 22px; position: relative; }
+  .sql-side + .sql-side { border-left: 1px solid var(--line); background: #f8fafc; }
+  .sql-label { font: 600 11px Inter; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+  .sql-code { font: 500 14px 'JetBrains Mono', monospace; color: var(--ink-2); line-height: 1.7; white-space: pre-wrap; }
+  .sql-code .kw { color: var(--brand); font-weight: 600; }
+  .sql-code .fn { color: var(--violet); }
+  .sql-code .str { color: var(--emerald); }
+  .sql-code .num { color: var(--amber); }
+  .sql-line { opacity: 0; transform: translateX(-6px); transition: opacity .25s ease, transform .25s ease; display: block; }
+  .sql-line.in { opacity: 1; transform: translateX(0); }
+
+  /* ---- Scene: JSON ---- */
+  .json-panel { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+  .json-side { padding: 18px 22px; }
+  .json-side + .json-side { border-left: 1px solid var(--line); background: #f8fafc; }
+  .json-code { font: 500 13px 'JetBrains Mono', monospace; color: var(--ink-2); white-space: pre; line-height: 1.55; }
+  .json-code .k { color: var(--brand); }
+  .json-code .s { color: var(--emerald); }
+  .json-code .n { color: var(--amber); }
+  .json-code .err { background: #fee2e2; color: var(--rose); padding: 0 3px; border-radius: 3px; }
+  .repair-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: #dcfce7; color: var(--ok);
+    font: 600 11px Inter; margin-left: 8px;
+    opacity: 0; transform: translateY(-4px); transition: .3s;
+  }
+  .repair-chip.on { opacity: 1; transform: translateY(0); }
+  .tree { font: 500 13px 'JetBrains Mono', monospace; line-height: 1.7; }
+  .tree .row { opacity: 0; transform: translateX(-6px); transition: .3s; display: block; color: var(--ink-2); }
+  .tree .row.in { opacity: 1; transform: translateX(0); }
+  .tree .row .k { color: var(--brand); }
+  .tree .row .s { color: var(--emerald); }
+  .tree .row .n { color: var(--amber); }
+  .tree .row .b { color: var(--pink); }
+
+  /* ---- Scene: Diagram ---- */
+  .diag-panel { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+  .diag-code { padding: 18px 22px; background: #0f172a; color: #cbd5e1; font: 500 12px 'JetBrains Mono', monospace; white-space: pre; line-height: 1.7; }
+  .diag-code .kw { color: #93c5fd; }
+  .diag-code .arr { color: #fb7185; }
+  .diag-code .lbl { color: #fde68a; }
+  .diag-canvas { position: relative; background:
+    linear-gradient(rgba(148,163,184,.18) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, rgba(148,163,184,.18) 1px, transparent 1px) 0 0 / 24px 24px,
+    #fbfdff;
+  }
+  .diag-canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .diag-node { fill: #fff; stroke: var(--brand); stroke-width: 2; opacity: 0; transition: opacity .3s ease; }
+  .diag-node.on { opacity: 1; }
+  .diag-label { font: 600 12px Inter; fill: var(--ink); opacity: 0; transition: .3s; }
+  .diag-label.on { opacity: 1; }
+  .diag-path { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 120; stroke-dashoffset: 120; transition: stroke-dashoffset .5s ease; }
+  .diag-path.on { stroke-dashoffset: 0; }
+
+  /* ---- Scene: Cron ---- */
+  .cron-panel { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+  .cron-fields { padding: 22px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-content: start; }
+  .cron-field {
+    border: 1px solid var(--line); border-radius: 8px;
+    text-align: center; padding: 10px 6px;
+    background: #fff;
+  }
+  .cron-field .lbl { font: 500 10px Inter; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+  .cron-field .val { font: 700 18px 'JetBrains Mono', monospace; color: var(--brand); }
+  .cron-expr {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+    font: 600 18px 'JetBrains Mono', monospace;
+    color: var(--ink);
+    background: #f1f5f9;
+    padding: 12px 16px; border-radius: 8px;
+    text-align: center; letter-spacing: .03em;
+  }
+  .cron-desc {
+    grid-column: 1 / -1;
+    font: 500 13px Inter; color: var(--muted); text-align: center;
+  }
+  .cron-next { padding: 22px; background: #f8fafc; border-left: 1px solid var(--line); }
+  .cron-next h4 { font: 600 12px Inter; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin: 0 0 12px; }
+  .cron-next .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: 1px dashed var(--line);
+    font: 500 13px 'JetBrains Mono', monospace; color: var(--ink-2);
+    opacity: 0; transform: translateX(-8px); transition: .35s;
+  }
+  .cron-next .row.in { opacity: 1; transform: translateX(0); }
+  .cron-next .row .rel { color: var(--brand); font-weight: 600; }
+
+  /* ---- Scene: Color ---- */
+  .color-panel { display: grid; grid-template-columns: 1fr 1fr; height: 100%; align-items: center; }
+  .color-left { display: flex; align-items: center; justify-content: center; }
+  .color-ring {
+    width: 220px; height: 220px; border-radius: 50%;
+    background: conic-gradient(from var(--hue,0deg), #ef4444, #f59e0b, #eab308, #84cc16, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
+    position: relative;
+    transition: filter .5s;
+    filter: drop-shadow(0 10px 24px rgba(15,23,42,.15));
+  }
+  .color-ring::after {
+    content: '';
+    position: absolute; inset: 40px;
+    background: #fff; border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .color-center {
+    position: absolute; inset: 60px;
+    border-radius: 50%;
+    background: var(--selected, #2563eb);
+    transition: background .5s ease;
+  }
+  .color-right { padding: 0 40px; }
+  .color-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--line);
+    font: 500 14px 'JetBrains Mono', monospace;
+  }
+  .color-row .lbl { color: var(--muted); font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  .color-row .val { color: var(--ink); }
+
+  /* ---- Scene: JWT ---- */
+  .jwt-panel { padding: 22px; height: 100%; display: flex; flex-direction: column; gap: 14px; }
+  .jwt-token {
+    background: #0f172a; color: #e2e8f0; border-radius: 10px;
+    padding: 16px 20px;
+    font: 500 12px 'JetBrains Mono', monospace;
+    word-break: break-all; line-height: 1.55;
+  }
+  .jwt-token .h { color: #fca5a5; }
+  .jwt-token .p { color: #c4b5fd; }
+  .jwt-token .s { color: #67e8f9; }
+  .jwt-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; flex: 1; }
+  .jwt-col {
+    border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+    background: #fff; opacity: 0; transform: translateY(8px); transition: .35s;
+  }
+  .jwt-col.in { opacity: 1; transform: translateY(0); }
+  .jwt-col h5 { margin: 0 0 8px; font: 700 11px Inter; letter-spacing: .1em; text-transform: uppercase; }
+  .jwt-col.header h5 { color: var(--rose); }
+  .jwt-col.payload h5 { color: var(--violet); }
+  .jwt-col.sig h5 { color: var(--cyan); }
+  .jwt-col pre { margin: 0; font: 500 12px 'JetBrains Mono', monospace; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+
+  /* ---- Scene: Grid ---- */
+  .grid-scene {
+    padding: 16px 28px 22px;
+    height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .grid-title {
+    font: 700 22px Inter; color: var(--ink);
+    display: flex; align-items: center; gap: 18px;
+    margin-bottom: 18px;
+  }
+  .grid-count {
+    font: 800 32px 'JetBrains Mono', monospace;
+    color: var(--brand);
+    min-width: 52px; text-align: right;
+  }
+  .grid-count + .lbl { font: 600 13px Inter; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  .tool-grid {
+    display: grid; grid-template-columns: repeat(13, 1fr);
+    gap: 8px;
+    width: 100%;
+  }
+  .gcell {
+    aspect-ratio: 1/1;
+    border-radius: 8px;
+    background: #f1f5f9; border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font: 700 11px 'JetBrains Mono', monospace;
+    color: var(--ink-2);
+    opacity: 0; transform: scale(.6);
+    transition: opacity .25s ease, transform .25s ease, background .25s ease, color .25s ease;
+  }
+  .gcell.in { opacity: 1; transform: scale(1); }
+
+  /* ---- Scene: Finale ---- */
+  .finale {
+    position: absolute; inset: 0;
+    background: var(--brand);
+    color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px;
+    opacity: 0; transition: opacity .4s ease;
+    z-index: 20;
+  }
+  .finale.on { opacity: 1; }
+  .finale h1 {
+    margin: 0;
+    font: 800 56px Inter;
+    letter-spacing: -.02em;
+    text-align: center;
+    line-height: 1.05;
+  }
+  .finale h1 .zero { color: #fde68a; font-variant-numeric: tabular-nums; }
+  .finale .sub {
+    font: 500 16px 'JetBrains Mono', monospace;
+    color: #bfdbfe; letter-spacing: .08em;
+  }
+
+  /* tool title label overlay (quick identification as scenes change) */
+  .scene-label {
+    position: absolute; left: 20px; top: 12px;
+    font: 600 11px 'JetBrains Mono', monospace;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    opacity: 0; transition: opacity .25s ease;
+  }
+  .scene.active .scene-label { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <!-- Browser chrome -->
+  <div class="chrome">
+    <div class="chrome-bar">
+      <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+      <div class="url"><span class="lock">🔒</span>devtoolkit.app</div>
+    </div>
+    <div class="chrome-body" id="chromeBody">
+
+      <!-- Ambient badges -->
+      <div class="badge tl">DevToolKit</div>
+      <div class="badge tr"><span class="pip"></span>0&nbsp;requests&nbsp;sent</div>
+      <div class="badge br"><span class="pip"></span>100% local</div>
+
+      <!-- Tool workspace -->
+      <div class="workspace">
+        <div class="tool-head">
+          <div class="icon" id="toolIcon" style="background: var(--brand);">&lt;/&gt;</div>
+          <div class="name" id="toolName">SQL Formatter</div>
+          <div class="badge-mini" id="toolBadge">Format &amp; Minify</div>
+        </div>
+        <div class="tool-body" id="toolBody">
+
+          <!-- SQL scene -->
+          <div class="scene" id="sceneSql">
+            <div class="scene-hero">
+              <div class="kicker">SQL Formatter</div>
+              <h2>Format SQL. <span class="hl">Don't ship it.</span></h2>
+            </div>
+            <div class="sql-panel">
+              <div class="sql-side">
+                <div class="sql-label">Input</div>
+                <div class="sql-code" id="sqlIn"><span class="sql-line in" style="white-space:pre-wrap">select u.id,u.name,u.email from users u join orders o on o.user_id=u.id where o.status='paid' and o.total&gt;100 order by o.created_at desc limit 50;</span></div>
+              </div>
+              <div class="sql-side">
+                <div class="sql-label" style="color: var(--brand);">Formatted</div>
+                <div class="sql-code" id="sqlOut">
+                  <span class="sql-line" id="sl1"><span class="kw">SELECT</span> u.id, u.name, u.email</span>
+                  <span class="sql-line" id="sl2"><span class="kw">FROM</span> users u</span>
+                  <span class="sql-line" id="sl3"><span class="kw">JOIN</span> orders o <span class="kw">ON</span> o.user_id = u.id</span>
+                  <span class="sql-line" id="sl4"><span class="kw">WHERE</span> o.status = <span class="str">'paid'</span></span>
+                  <span class="sql-line" id="sl5">  <span class="kw">AND</span> o.total &gt; <span class="num">100</span></span>
+                  <span class="sql-line" id="sl6"><span class="kw">ORDER BY</span> o.created_at <span class="kw">DESC</span></span>
+                  <span class="sql-line" id="sl7"><span class="kw">LIMIT</span> <span class="num">50</span>;</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- JSON scene -->
+          <div class="scene" id="sceneJson">
+            <div class="scene-hero">
+              <div class="kicker">JSON Tools</div>
+              <h2>Repair JSON. <span class="hl">Don't send it.</span></h2>
+            </div>
+            <div class="json-panel">
+              <div class="json-side">
+                <div class="sql-label">Malformed input <span class="repair-chip" id="repairChip">✓ Auto-repaired</span></div>
+                <div class="json-code"><span>{</span>
+  <span class="k">"user"</span>: {
+    <span class="k">"id"</span>: <span class="n">42</span>,
+    <span class="k">"name"</span>: <span class="s">"Alex"</span><span class="err" id="jsonErr">,</span>
+    <span class="k">"roles"</span>: [<span class="s">"admin"</span>, <span class="s">"editor"</span>]
+    <span class="k">"active"</span>: <span id="jsonBad">true</span>
+  }
+}</div>
+              </div>
+              <div class="json-side">
+                <div class="sql-label" style="color: var(--brand);">Tree view</div>
+                <div class="tree" id="jsonTree">
+                  <span class="row" id="jr1">▼ <span class="k">user</span></span>
+                  <span class="row" id="jr2">&nbsp;&nbsp;<span class="k">id</span>: <span class="n">42</span></span>
+                  <span class="row" id="jr3">&nbsp;&nbsp;<span class="k">name</span>: <span class="s">"Alex"</span></span>
+                  <span class="row" id="jr4">&nbsp;&nbsp;▼ <span class="k">roles</span> [2]</span>
+                  <span class="row" id="jr5">&nbsp;&nbsp;&nbsp;&nbsp;0: <span class="s">"admin"</span></span>
+                  <span class="row" id="jr6">&nbsp;&nbsp;&nbsp;&nbsp;1: <span class="s">"editor"</span></span>
+                  <span class="row" id="jr7">&nbsp;&nbsp;<span class="k">active</span>: <span class="b">true</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagram scene -->
+          <div class="scene" id="sceneDiag">
+            <div class="scene-hero">
+              <div class="kicker">Diagram Generator · 12 types</div>
+              <h2>Mermaid. <span class="hl">Minus the cloud.</span></h2>
+            </div>
+            <div class="diag-panel">
+              <div class="diag-code"><span class="kw">flowchart</span> LR
+  A[<span class="lbl">User</span>] <span class="arr">--&gt;</span> B[<span class="lbl">Auth</span>]
+  B <span class="arr">--&gt;</span> C{<span class="lbl">Valid?</span>}
+  C <span class="arr">--&gt;|yes|</span> D[<span class="lbl">App</span>]
+  C <span class="arr">--&gt;|no|</span> E[<span class="lbl">Login</span>]</div>
+              <div class="diag-canvas">
+                <svg viewBox="0 0 700 430" preserveAspectRatio="xMidYMid meet">
+                  <!-- nodes -->
+                  <g class="diag-node" id="dn_a"><rect x="40" y="180" width="100" height="52" rx="10"/></g>
+                  <g class="diag-node" id="dn_b"><rect x="220" y="180" width="100" height="52" rx="10"/></g>
+                  <g class="diag-node" id="dn_c"><path d="M400 206 L465 170 L530 206 L465 242 Z"/></g>
+                  <g class="diag-node" id="dn_d"><rect x="580" y="120" width="90" height="48" rx="10"/></g>
+                  <g class="diag-node" id="dn_e"><rect x="580" y="250" width="90" height="48" rx="10"/></g>
+
+                  <text class="diag-label" id="dl_a" x="90"  y="212" text-anchor="middle">User</text>
+                  <text class="diag-label" id="dl_b" x="270" y="212" text-anchor="middle">Auth</text>
+                  <text class="diag-label" id="dl_c" x="465" y="212" text-anchor="middle">Valid?</text>
+                  <text class="diag-label" id="dl_d" x="625" y="150" text-anchor="middle">App</text>
+                  <text class="diag-label" id="dl_e" x="625" y="280" text-anchor="middle">Login</text>
+
+                  <path class="diag-path" id="dp1" d="M140 206 L218 206"/>
+                  <path class="diag-path" id="dp2" d="M320 206 L400 206"/>
+                  <path class="diag-path" id="dp3" d="M510 185 L580 150"/>
+                  <path class="diag-path" id="dp4" d="M510 225 L580 265"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cron scene -->
+          <div class="scene" id="sceneCron">
+            <div class="scene-hero">
+              <div class="kicker">Cron Builder</div>
+              <h2>Cron, <span class="hl">finally decoded.</span></h2>
+            </div>
+            <div class="cron-panel">
+              <div class="cron-fields">
+                <div class="cron-field"><div class="lbl">Minute</div><div class="val">0</div></div>
+                <div class="cron-field"><div class="lbl">Hour</div><div class="val">9</div></div>
+                <div class="cron-field"><div class="lbl">Day</div><div class="val">*</div></div>
+                <div class="cron-field"><div class="lbl">Month</div><div class="val">*</div></div>
+                <div class="cron-field"><div class="lbl">Weekday</div><div class="val">1-5</div></div>
+                <div class="cron-expr">0 9 * * 1-5</div>
+                <div class="cron-desc">At 09:00 AM, Monday through Friday</div>
+              </div>
+              <div class="cron-next">
+                <h4>Next 4 runs</h4>
+                <div class="row" id="cn1"><span>Mon · Apr 21 2026</span><span class="rel">in 20h</span></div>
+                <div class="row" id="cn2"><span>Tue · Apr 22 2026</span><span>+1 day</span></div>
+                <div class="row" id="cn3"><span>Wed · Apr 23 2026</span><span>+2 days</span></div>
+                <div class="row" id="cn4"><span>Thu · Apr 24 2026</span><span>+3 days</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Color scene -->
+          <div class="scene" id="sceneColor">
+            <div class="scene-hero">
+              <div class="kicker">Color Converter</div>
+              <h2>HEX → OKLCH. <span class="hl">One click.</span></h2>
+            </div>
+            <div class="color-panel">
+              <div class="color-left">
+                <div class="color-ring" id="colorRing">
+                  <div class="color-center" id="colorCenter"></div>
+                </div>
+              </div>
+              <div class="color-right">
+                <div class="color-row"><span class="lbl">HEX</span><span class="val" id="cHex">#2563EB</span></div>
+                <div class="color-row"><span class="lbl">RGB</span><span class="val" id="cRgb">37, 99, 235</span></div>
+                <div class="color-row"><span class="lbl">HSL</span><span class="val" id="cHsl">221°, 83%, 53%</span></div>
+                <div class="color-row"><span class="lbl">OKLCH</span><span class="val" id="cOklch">0.56, 0.22, 263</span></div>
+                <div class="color-row"><span class="lbl">WCAG</span><span class="val" style="color: var(--ok)">AAA · 7.4:1</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- JWT scene -->
+          <div class="scene" id="sceneJwt">
+            <div class="scene-hero">
+              <div class="kicker">JWT Decode</div>
+              <h2>Decode tokens. <span class="hl">Leak nothing.</span></h2>
+            </div>
+            <div class="jwt-panel">
+              <div class="jwt-token"><span class="h">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9</span>.<span class="p">eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFsZXggUml2ZXJhIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzEzNjUwMDAwfQ</span>.<span class="s">SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c</span></div>
+              <div class="jwt-cols">
+                <div class="jwt-col header" id="jc1">
+                  <h5>Header</h5>
+<pre>{
+  "alg": "HS256",
+  "typ": "JWT"
+}</pre>
+                </div>
+                <div class="jwt-col payload" id="jc2">
+                  <h5>Payload</h5>
+<pre>{
+  "sub": "1234567890",
+  "name": "Alex Rivera",
+  "role": "admin",
+  "iat": 1713650000
+}</pre>
+                </div>
+                <div class="jwt-col sig" id="jc3">
+                  <h5>Signature</h5>
+<pre>HMACSHA256(
+  base64Url(header) +
+  "." +
+  base64Url(payload),
+  secret
+)</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tool grid scene -->
+          <div class="scene" id="sceneGrid">
+            <div class="scene-hero">
+              <div class="kicker">The whole kit</div>
+              <h2><span class="hl">26 tools.</span> <span class="zero">0</span> uploads.</h2>
+            </div>
+            <div class="grid-scene">
+              <div class="grid-title">
+                <span class="grid-count" id="gridCount">0</span>
+                <span class="lbl">tools · one tab · zero network</span>
+              </div>
+              <div class="tool-grid" id="toolGrid"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Finale overlay -->
+  <div class="finale" id="finale">
+    <h1>26 tools.<br><span class="zero">0</span> network.</h1>
+    <div class="sub">devtoolkit.app · local-first, always</div>
+  </div>
+</div>
+
+<script>
+// ---------- Timeline ----------
+const TIMELINE = {
+  sqlIn:     400,
+  sqlDone:   2700,    // 2.3s total
+  jsonIn:    3000,
+  jsonDone:  5200,
+  diagIn:    5500,
+  diagDone:  8000,
+  cronIn:    8300,
+  cronDone:  10500,
+  colorIn:   10800,
+  colorDone: 13000,
+  jwtIn:     13300,
+  jwtDone:   15300,
+  gridIn:    15600,
+  gridDone:  18200,
+  finaleIn:  18400,
+  loopPauseAt: 20000
+};
+
+// Tool metadata — drives the head bar per scene
+const TOOLS = {
+  sql:    { name: 'SQL Formatter',      badge: 'Format & Minify',  icon: 'SQL', color: '#2563eb' },
+  json:   { name: 'JSON Tools',         badge: 'Auto-Repair',      icon: '{ }', color: '#d97706' },
+  diag:   { name: 'Diagram Generator',  badge: 'Mermaid · 12 types', icon: '◇',   color: '#7c3aed' },
+  cron:   { name: 'Cron Builder',       badge: 'Next Runs',         icon: '⏱',   color: '#059669' },
+  color:  { name: 'Color Converter',    badge: 'WCAG · OKLCH',      icon: '◉',   color: '#db2777' },
+  jwt:    { name: 'JWT Decode',         badge: 'Inspect',           icon: '{}',  color: '#0891b2' },
+  grid:   { name: 'DevToolKit',         badge: 'All tools',         icon: '⚏',   color: '#2563eb' }
+};
+
+const SCENE_LIST = [
+  { key: 'sql',   el: 'sceneSql',   show: TIMELINE.sqlIn,   hide: TIMELINE.sqlDone },
+  { key: 'json',  el: 'sceneJson',  show: TIMELINE.jsonIn,  hide: TIMELINE.jsonDone },
+  { key: 'diag',  el: 'sceneDiag',  show: TIMELINE.diagIn,  hide: TIMELINE.diagDone },
+  { key: 'cron',  el: 'sceneCron',  show: TIMELINE.cronIn,  hide: TIMELINE.cronDone },
+  { key: 'color', el: 'sceneColor', show: TIMELINE.colorIn, hide: TIMELINE.colorDone },
+  { key: 'jwt',   el: 'sceneJwt',   show: TIMELINE.jwtIn,   hide: TIMELINE.jwtDone },
+  { key: 'grid',  el: 'sceneGrid',  show: TIMELINE.gridIn,  hide: TIMELINE.gridDone },
+];
+
+let animTimers = [];
+function schedule(t, fn) { animTimers.push(setTimeout(fn, t)); }
+function clearAll() { animTimers.forEach(clearTimeout); animTimers = []; }
+
+function setTool(key) {
+  const t = TOOLS[key];
+  document.getElementById('toolName').textContent = t.name;
+  document.getElementById('toolBadge').textContent = t.badge;
+  const ic = document.getElementById('toolIcon');
+  ic.textContent = t.icon;
+  ic.style.background = t.color;
+}
+
+function showScene(key) {
+  SCENE_LIST.forEach(s => document.getElementById(s.el).classList.toggle('active', s.key === key));
+  setTool(key);
+}
+
+function hideScene(key) {
+  document.getElementById(SCENE_LIST.find(s => s.key === key).el).classList.remove('active');
+}
+
+// Staggered line-in helper
+function staggerIn(ids, delay = 100, start = 0) {
+  ids.forEach((id, i) => schedule(start + i * delay, () => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('in');
+  }));
+}
+function resetIn(ids) {
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('in'); });
+}
+
+// ---------- Scene runners ----------
+function runSql() {
+  showScene('sql');
+  const lines = ['sl1','sl2','sl3','sl4','sl5','sl6','sl7'];
+  resetIn(lines);
+  staggerIn(lines, 130, 60);
+}
+
+function runJson() {
+  showScene('json');
+  const rows = ['jr1','jr2','jr3','jr4','jr5','jr6','jr7'];
+  resetIn(rows);
+  document.getElementById('repairChip').classList.remove('on');
+  schedule(150, () => document.getElementById('repairChip').classList.add('on'));
+  staggerIn(rows, 110, 300);
+}
+
+function runDiag() {
+  showScene('diag');
+  const nodes = ['dn_a','dn_b','dn_c','dn_d','dn_e'];
+  const labels = ['dl_a','dl_b','dl_c','dl_d','dl_e'];
+  const paths = ['dp1','dp2','dp3','dp4'];
+  [...nodes, ...labels, ...paths].forEach(id => document.getElementById(id).classList.remove('on'));
+  const seq = [
+    ['dn_a','dl_a', 60],
+    ['dp1', 250],
+    ['dn_b','dl_b', 400],
+    ['dp2', 600],
+    ['dn_c','dl_c', 750],
+    ['dp3', 950],
+    ['dn_d','dl_d', 1100],
+    ['dp4', 1280],
+    ['dn_e','dl_e', 1420],
+  ];
+  seq.forEach(step => {
+    const t = step[step.length - 1];
+    const ids = step.slice(0, -1);
+    schedule(t, () => ids.forEach(id => document.getElementById(id).classList.add('on')));
+  });
+}
+
+function runCron() {
+  showScene('cron');
+  const rows = ['cn1','cn2','cn3','cn4'];
+  resetIn(rows);
+  staggerIn(rows, 130, 200);
+}
+
+function runColor() {
+  showScene('color');
+  // sweep the hue ring
+  const ring = document.getElementById('colorRing');
+  const center = document.getElementById('colorCenter');
+  const hex = document.getElementById('cHex');
+  const rgb = document.getElementById('cRgb');
+  const hsl = document.getElementById('cHsl');
+  const oklch = document.getElementById('cOklch');
+  // simple animation: rotate the conic gradient by increasing --hue, update readings
+  const palette = [
+    { hex:'#DB2777', rgb:'219, 39, 119', hsl:'330°, 70%, 51%', oklch:'0.57, 0.23, 0'   },
+    { hex:'#D97706', rgb:'217, 119, 6',  hsl:' 32°, 94%, 44%', oklch:'0.67, 0.17, 50'  },
+    { hex:'#059669', rgb:'5, 150, 105',  hsl:'161°, 94%, 30%', oklch:'0.65, 0.17, 160' },
+    { hex:'#0891B2', rgb:'8, 145, 178',  hsl:'192°, 91%, 36%', oklch:'0.68, 0.12, 230' },
+    { hex:'#2563EB', rgb:'37, 99, 235',  hsl:'221°, 83%, 53%', oklch:'0.56, 0.22, 263' },
+  ];
+  let i = 0;
+  const apply = () => {
+    const p = palette[i % palette.length];
+    center.style.background = p.hex;
+    hex.textContent = p.hex;
+    rgb.textContent = p.rgb;
+    hsl.textContent = p.hsl;
+    oklch.textContent = p.oklch;
+    ring.style.setProperty('--hue', (i * 40) + 'deg');
+    i++;
+  };
+  apply();
+  schedule(350, apply);
+  schedule(700, apply);
+  schedule(1100, apply);
+  schedule(1500, apply);
+}
+
+function runJwt() {
+  showScene('jwt');
+  ['jc1','jc2','jc3'].forEach(id => document.getElementById(id).classList.remove('in'));
+  schedule(120, () => document.getElementById('jc1').classList.add('in'));
+  schedule(320, () => document.getElementById('jc2').classList.add('in'));
+  schedule(520, () => document.getElementById('jc3').classList.add('in'));
+}
+
+function runGrid() {
+  showScene('grid');
+  const tools = [
+    'SQL','JSON','MD','MOCK','JWT','LOG','HAR','EPOCH','COLOR','CRON','DIFF','DIAG','BIN',
+    'PLAN','UUID','CSV','CSP','EXT','LIST','FMT','FILE','STACK','PDF','PDF+','TXT','SMRT'
+  ];
+  const grid = document.getElementById('toolGrid');
+  grid.innerHTML = '';
+  tools.forEach(name => {
+    const d = document.createElement('div');
+    d.className = 'gcell'; d.textContent = name;
+    grid.appendChild(d);
+  });
+  const cells = grid.querySelectorAll('.gcell');
+  const count = document.getElementById('gridCount');
+  count.textContent = '0';
+
+  // tile in + counter up
+  const total = 26;
+  const span = 1600; // ms across which to tile + count
+  const per = Math.floor(span / total);
+  for (let i = 0; i < total; i++) {
+    schedule(per * i + 60, () => {
+      cells[i].classList.add('in');
+      count.textContent = (i + 1).toString();
+    });
+  }
+}
+
+// ---------- Master timeline ----------
+window.runLoop = function runLoop() {
+  clearAll();
+  // hide all scenes + finale
+  SCENE_LIST.forEach(s => document.getElementById(s.el).classList.remove('active'));
+  document.getElementById('finale').classList.remove('on');
+
+  schedule(TIMELINE.sqlIn,     runSql);
+  schedule(TIMELINE.jsonIn,    runJson);
+  schedule(TIMELINE.diagIn,    runDiag);
+  schedule(TIMELINE.cronIn,    runCron);
+  schedule(TIMELINE.colorIn,   runColor);
+  schedule(TIMELINE.jwtIn,     runJwt);
+  schedule(TIMELINE.gridIn,    runGrid);
+  schedule(TIMELINE.finaleIn,  () => document.getElementById('finale').classList.add('on'));
+  schedule(TIMELINE.loopPauseAt, () => window.runLoop());
+};
+
+window.addEventListener('load', () => setTimeout(() => window.runLoop(), 250));
+</script>
+</body>
+</html>

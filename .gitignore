@@ -1,0 +1,10 @@
+node_modules/
+bin/
+*.exe
+frames/
+frames.txt
+palette.png
+
+# Per-run raw eval files (curated aggregate in evaluations/index.md only)
+evaluations/runs/*
+!evaluations/runs/.gitkeep

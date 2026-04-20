@@ -1,0 +1,1584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ast-graph — README demo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    /* Bright dashboard — clean warm white + neutral ink + rust accent */
+    --bg:        #fbfaf7;   /* stage canvas — faintly warm off-white */
+    --surface:   #ffffff;   /* card surface */
+    --surface-2: #f4f2ed;   /* inset surface / chip */
+    --panel:     #ffffff;   /* lightest panel */
+    --ink:       #0f1113;   /* near-black, slight cool */
+    --ink-2:     #272a30;
+    --muted:     #6b7280;   /* neutral gray 500 */
+    --muted-2:   #a8adb9;   /* lighter */
+    --border:    #e5e3dd;   /* hairline */
+    --border-2:  #efede6;   /* subtle */
+
+    --rust:      #d14800;   /* primary accent — Rust orange */
+    --rust-2:    #8a2d00;   /* deeper */
+    --rust-soft: rgba(209,72,0,0.08);
+    --rust-ring: rgba(209,72,0,0.22);
+    --blue:      #1d4ed8;   /* indigo-blue */
+    --green:     #15803d;   /* forest */
+    --yellow:    #b45309;   /* burnt amber */
+    --plum:      #7c3aed;   /* violet */
+
+    --font-display: 'Geist', system-ui, -apple-system, Segoe UI, sans-serif;
+    --font-mono:    'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace;
+
+    /* legacy aliases (scene 2/etc. still reference some) */
+    --paper: var(--bg); --paper-2: var(--surface-2); --vellum: var(--surface);
+    --hair: var(--border); --hair-2: var(--muted-2); --ink-3: var(--muted);
+    --accent: var(--rust); --accent-2: var(--rust-2);
+    --hot: var(--rust); --hot-2: var(--rust-2);
+    --good: var(--green); --amber: var(--yellow); --amber-soft: rgba(250,204,21,0.1);
+    --plum-soft: rgba(192,132,252,0.12); --moss: var(--green); --gold: var(--yellow);
+    --ghost: var(--surface-2);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #0e1013; }
+  body {
+    display: grid; place-items: center;
+    min-height: 100vh;
+    font-family: var(--font-display);
+    color: var(--ink);
+  }
+
+  /* ---------- stage ---------- */
+  .stage {
+    width: 1200px; height: 675px;
+    background:
+      radial-gradient(ellipse 70% 50% at 15% -10%, rgba(209,72,0,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 75% 55% at 95% 110%, rgba(29,78,216,0.05) 0%, transparent 65%),
+      linear-gradient(180deg, #ffffff 0%, #f5f4f0 100%);
+    color: var(--ink);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 50px 130px -10px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(15,17,19,0.08);
+  }
+  /* Subtle dot grid */
+  .stage::before {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(15,17,19,0.055) 1px, transparent 1.3px);
+    background-size: 24px 24px;
+    background-position: -1px -1px;
+  }
+  /* No baseline rule in the bright variant — keep the canvas clean */
+  .stage::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background: transparent;
+  }
+  /* All stage children sit above the grid/scanline overlays */
+  .stage > * { position: relative; z-index: 3; }
+
+  /* Masthead: [ AST-GRAPH ]   tagline   STEP 02/04 ──── */
+  .header {
+    position: absolute; top: 26px; left: 36px; right: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    z-index: 50;
+  }
+  .header .sep { display: none; }
+
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 13px; font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--bg);
+    white-space: nowrap;
+    padding: 6px 14px;
+    background: var(--ink);
+    border: 1px solid var(--ink);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px -2px rgba(26,22,16,0.25);
+  }
+  .brand .sq {
+    width: 20px; height: 20px;
+    background: var(--rust);
+    color: var(--bg);
+    display: grid; place-items: center;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    box-shadow: 0 0 0 3px var(--rust-soft);
+  }
+
+  .tagline {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .tagline::before {
+    content: "/";
+    margin-right: 10px;
+    color: var(--rust);
+    opacity: 0.7;
+  }
+
+  .step-ind {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .step-ind .num {
+    font-family: var(--font-mono);
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    white-space: nowrap;
+    text-transform: uppercase;
+  }
+  .step-ind .num::before {
+    content: "STEP";
+    color: var(--muted-2);
+    margin-right: 6px;
+    font-weight: 500;
+  }
+  .step-ind .num .cur   { color: var(--rust); font-size: 12px; font-weight: 700; }
+  .step-ind .num .slash { color: var(--muted-2); margin: 0 3px; }
+  .step-ind .bar {
+    width: 100px;
+    height: 2px;
+    background: var(--border);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+  .step-ind .bar-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 0;
+    background: linear-gradient(90deg, var(--rust-2), var(--rust));
+    box-shadow: 0 0 6px var(--rust-ring);
+    transition: width .55s cubic-bezier(.3,.7,.3,1);
+  }
+
+  /* ---------- hero title (swaps per scene) ---------- */
+  .hero {
+    position: absolute;
+    top: 70px; left: 36px; right: 36px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 44px;
+    letter-spacing: -0.03em;
+    line-height: 1.06;
+    color: var(--ink);
+    z-index: 40;
+    min-height: 52px;
+    font-variation-settings: "opsz" 96;
+  }
+  .hero .slot {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .55s cubic-bezier(.3,.7,.3,1), transform .55s cubic-bezier(.3,.7,.3,1);
+    max-width: 100%;
+  }
+  .hero .slot.in { opacity: 1; transform: translateY(0); }
+  .hero b {
+    color: var(--rust);
+    font-weight: 700;
+    position: relative;
+  }
+  .hero b::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -2px;
+    height: 2px;
+    background: var(--rust);
+    opacity: 0.4;
+    border-radius: 1px;
+  }
+  .hero em {
+    font-style: italic;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  /* ---------- scene containers ---------- */
+  .scene {
+    position: absolute; inset: 152px 36px 32px;
+    opacity: 0;
+    transition: opacity .5s ease;
+  }
+  .scene.active { opacity: 1; }
+
+  /* ============================================================
+     SCENE 1: before — tree + source
+     ============================================================ */
+  .before {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 22px;
+    height: 100%;
+  }
+
+  /* Shared panel chrome */
+  .tree, .src {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 20px 40px -20px rgba(0,0,0,0.6);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tree { padding: 20px 22px 18px; }
+  .src  {
+    padding: 18px 24px 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7f6f2 100%);
+    border-color: var(--border);
+  }
+
+  .tree {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.75;
+  }
+  .tree-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tree-title::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--rust);
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px var(--rust-soft);
+  }
+  .tree-scroll {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+  }
+  .tree-scroll-inner {
+    position: absolute; top: 0; left: 0; right: 0;
+    transform: translateY(0);
+    transition: transform 3.6s linear;
+  }
+  .stage.scene1-playing .tree-scroll-inner { transform: translateY(-380px); }
+  .tree-row {
+    color: var(--ink-2);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity .35s;
+    font-weight: 400;
+  }
+  .tree-row.dim  { color: var(--muted); }
+  .tree-row.file { color: var(--rust); font-weight: 600; }
+  .tree-row.file::after {
+    content: " ← focus";
+    color: var(--rust);
+    opacity: 0.7;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    margin-left: 6px;
+  }
+  .tree-row .indent { color: var(--muted-2); font-weight: 300; }
+
+  .src {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+  }
+  .src-head {
+    display: flex; justify-content: space-between;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .src-head .dot3 { display: inline-flex; gap: 6px; margin-right: 10px; vertical-align: -1px; }
+  .src-head .dot3 span {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+    display: inline-block;
+  }
+  .src-head .dot3 span:nth-child(1) { background: #ff5f57; }
+  .src-head .dot3 span:nth-child(2) { background: #febc2e; }
+  .src-head .dot3 span:nth-child(3) { background: #28c840; }
+  .src-scroll {
+    position: relative; height: calc(100% - 36px);
+    overflow: hidden;
+  }
+  .src-scroll-inner {
+    position: absolute; top: 0; left: 0; right: 0;
+    transform: translateY(0);
+    transition: transform 3.6s linear;
+  }
+  .stage.scene1-playing .src-scroll-inner { transform: translateY(-1100px); }
+  .src-line { display: flex; gap: 14px; }
+  .src-line .ln {
+    color: var(--muted-2);
+    width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+    font-weight: 400;
+  }
+  .src-line .code { color: var(--ink); white-space: pre; font-weight: 400; }
+  /* Syntax colors — ink-on-white palette */
+  .src-line .code .kw  { color: #d14800; font-weight: 600; }
+  .src-line .code .ty  { color: #b45309; }
+  .src-line .code .fn  { color: #1d4ed8; font-weight: 500; }
+  .src-line .code .cmt { color: #6b7280; font-style: italic; }
+  .src-line .code .str { color: #15803d; }
+
+  /* ============================================================
+     SCENE 2: scan transformation
+     ============================================================ */
+  /* Scene 2 — pipeline */
+  .pipe {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .pipe-status {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .pipe-dot {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(42,122,62,0.18);
+    animation: blink 1.1s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 3px rgba(42,122,62,0.22); }
+    50%      { opacity: 0.55; box-shadow: 0 0 0 6px rgba(42,122,62,0.06); }
+  }
+  .pipe-cmd { color: var(--ink); font-weight: 500; }
+  .pipe-cmd::before { content: ""; }
+  .pipe-elapsed {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding-left: 14px;
+    border-left: 1px solid var(--border);
+  }
+
+  .pipe-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 32px 1fr 32px 1fr 32px 1fr;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .pipe-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted-2);
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: opacity .55s ease, transform .55s ease;
+  }
+  .pipe-arrow.in { opacity: 1; transform: translateX(0); }
+  .pipe-arrow svg { width: 40px; height: 14px; }
+
+  .pipe-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 40px -18px rgba(26,22,16,0.18), 0 1px 0 rgba(255,255,255,0.8) inset;
+    opacity: 0;
+    transform: translateX(-26px);
+    transition: opacity .75s ease, transform .75s cubic-bezier(.3,1,.3,1);
+  }
+  .pipe-card.in { opacity: 1; transform: translateX(0); }
+  .pipe-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--rust) 50%, transparent 100%);
+    opacity: 0.6;
+  }
+  .pc-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--rust);
+  }
+  .pc-head {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--ink);
+  }
+  .pc-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+    letter-spacing: 0.005em;
+  }
+  .pc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 2px;
+  }
+  .pc-chips span {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--ink-2);
+    padding: 3px 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .pc-metric {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .pc-metric-num {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .pc-metric-lbl {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  /* Two-row variant for the skeleton card so "symbols" and "edges" never wrap. */
+  .pc-metric-stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .pc-mrow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .pc-mrow .pc-metric-num { font-size: 20px; }
+
+  .pc-backends {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 6px;
+  }
+  .be {
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--rust);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .be-alt { border-left-color: var(--blue); }
+  .be-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .be-tag {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 400;
+    color: var(--muted);
+    letter-spacing: 0.015em;
+  }
+
+  /* ============================================================
+     SCENE 3: graph
+     ============================================================ */
+  .graph {
+    height: 100%;
+    position: relative;
+  }
+  .graph-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 14px;
+  }
+  .graph-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .graph-sub {
+    font-family: var(--font-mono);
+    font-size: 11px; color: var(--muted);
+    letter-spacing: 0.08em;
+    font-weight: 500;
+  }
+
+  /* Bright panel — neutral white with faint dot grid and a rust halo near the root */
+  .graph-svg-wrap {
+    width: 100%; height: calc(100% - 44px);
+    background:
+      radial-gradient(ellipse 70% 90% at 50% 8%, rgba(209,72,0,0.04) 0%, transparent 60%),
+      radial-gradient(circle at 1px 1px, rgba(15,17,19,0.055) 1px, transparent 1.3px),
+      linear-gradient(180deg, #ffffff 0%, #f6f5f1 100%);
+    background-size: auto, 24px 24px, auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03);
+    overflow: hidden;
+    position: relative;
+  }
+  .graph-svg-wrap::before {
+    content: "FIG · AST · tree-sitter output";
+    position: absolute;
+    top: 12px; left: 16px;
+    font-family: var(--font-mono);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    z-index: 2;
+  }
+  .graph-svg-wrap::after {
+    content: "ROOT → LEAVES";
+    position: absolute;
+    top: 12px; right: 16px;
+    font-family: var(--font-mono);
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.22em;
+    color: var(--muted-2);
+    z-index: 2;
+  }
+  .graph-svg { width: 100%; height: 100%; display: block; position: relative; z-index: 1; }
+
+  /* AST node styling — rounded rects for branches, ellipses for leaves */
+  .g-node {
+    filter: none;
+    opacity: 0;
+    transition: opacity .45s ease;
+  }
+  .g-node.in { opacity: 1; }
+  .g-node .nshape { stroke-width: 1.2; rx: 6; ry: 6; }
+  .g-node .lbl {
+    font-family: var(--font-mono);
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.005em;
+    dominant-baseline: central;
+    text-anchor: middle;
+    fill: var(--ink-2);
+  }
+  .g-node.root   .nshape { fill: var(--rust); stroke: var(--rust-2); stroke-width: 2; filter: url(#glow-goal); }
+  .g-node.root   .lbl    { fill: #fff; font-weight: 700; letter-spacing: 0.04em; }
+  .g-node.decl   .nshape { fill: #ffffff; stroke: #c9c6bf; }
+  .g-node.decl   .lbl    { fill: var(--ink); }
+  .g-node.stmt   .nshape { fill: #eff4ff; stroke: #4a6dce; stroke-width: 1.4; }
+  .g-node.stmt   .lbl    { fill: #1d3b8a; font-weight: 600; }
+  .g-node.expr   .nshape { fill: #f5efff; stroke: #8b5fd4; }
+  .g-node.expr   .lbl    { fill: #4a2b87; font-weight: 600; }
+  .g-node.leaf   .nshape { fill: #ecf7ef; stroke: #3d9058; }
+  .g-node.leaf   .lbl    { fill: #1e5a33; font-weight: 600; }
+  /* legacy kinds still present from fitNodeWidths fallbacks — treat as decl */
+  .g-node.met    .nshape { fill: #ffffff; stroke: #c9c6bf; }
+  .g-node.met    .lbl    { fill: var(--ink); }
+  .g-node.goal   .nshape { fill: var(--rust); stroke: var(--rust-2); stroke-width: 2; filter: url(#glow-goal); }
+  .g-node.goal   .lbl    { fill: #fff; font-weight: 700; }
+
+  /* Edges — neutral grey strokes on the clean canvas */
+  .g-edge {
+    stroke: #b3b0a8;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+    fill: none;
+    opacity: 0.85;
+  }
+  .g-edge[data-level="1"] { stroke: #8c8980; opacity: 0.95; }
+  .g-edge.hl { stroke: var(--rust); stroke-width: 1.8; opacity: 0.95; }
+
+  /* animation: pop in nodes (opacity only — CSS transform would override the SVG
+     translate() we use for positioning) */
+  .g-node { opacity: 0; transition: opacity .35s ease; }
+  .g-node.in { opacity: 1; }
+  .g-edge { stroke-dasharray: 1400; stroke-dashoffset: 1400; }
+  .g-edge.in { stroke-dashoffset: 0; transition: stroke-dashoffset .6s ease-out; }
+
+  /* ============================================================
+     SCENE 4: feature grid (2×3)
+     ============================================================ */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 16px;
+    height: 100%;
+  }
+  .fx {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 22px 20px;
+    box-shadow: 0 14px 30px -14px rgba(26,22,16,0.18), 0 1px 0 rgba(255,255,255,0.9) inset;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity .55s ease, transform .55s cubic-bezier(.3,.9,.3,1);
+    overflow: hidden;
+  }
+  .fx.in { opacity: 1; transform: translateY(0); }
+
+  /* A glowing stripe in the card's accent color on the left edge */
+  .fx::before {
+    content: "";
+    position: absolute;
+    top: 14px; bottom: 14px; left: 0;
+    width: 3px;
+    background: var(--fx-c, var(--rust));
+    box-shadow: 0 0 12px var(--fx-c, var(--rust));
+    opacity: 0.85;
+    border-radius: 0 2px 2px 0;
+  }
+  /* Plate number bottom-right */
+  .fx::after {
+    content: attr(data-i);
+    position: absolute;
+    bottom: 14px; right: 18px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--muted-2);
+  }
+
+  .fx-badge {
+    align-self: flex-start;
+    min-width: 44px; height: 44px;
+    padding: 0 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--fx-c, var(--rust));
+    color: #ffffff;
+    border: 1.5px solid var(--fx-c, var(--rust));
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 4px 10px -3px rgba(26,22,16,0.3);
+  }
+  .fx-head {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -0.02em;
+    line-height: 1.18;
+    color: var(--ink);
+    position: relative;
+    z-index: 2;
+    font-variation-settings: "opsz" 48;
+  }
+  .fx-sub {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--muted);
+    line-height: 1.55;
+    letter-spacing: 0.005em;
+    position: relative;
+    z-index: 2;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Accent palette — saturated for the brighter canvas */
+  .fx[data-i="0"] { --fx-c: #15803d; }  /* forest — fast */
+  .fx[data-i="1"] { --fx-c: #d14800; }  /* rust — hotspots */
+  .fx[data-i="2"] { --fx-c: #1d4ed8; }  /* indigo-blue — exact */
+  .fx[data-i="3"] { --fx-c: #7c3aed; }  /* violet — chains */
+  .fx[data-i="4"] { --fx-c: #b45309; }  /* burnt amber — git */
+  .fx[data-i="5"] { --fx-c: #0e7490; }  /* teal — LLM */
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="header">
+    <div class="brand">ast-graph</div>
+    <span class="sep"></span>
+    <div class="tagline">your code, as a graph</div>
+    <span class="sep"></span>
+    <div class="step-ind">
+      <span class="num"><span class="cur" id="p-cur">01</span><span class="slash">/</span><span>04</span></span>
+      <div class="bar"><div class="bar-fill" id="p-fill"></div></div>
+    </div>
+  </div>
+
+  <div class="hero"><span class="slot" id="hero-slot"></span></div>
+
+  <!-- ============ SCENE 1: BEFORE ============ -->
+  <section class="scene" id="sc-before">
+    <div class="before">
+      <div class="tree">
+        <div class="tree-title">orders-service/ · 810 files</div>
+        <div class="tree-scroll">
+          <div class="tree-scroll-inner" id="tree-rows"></div>
+        </div>
+      </div>
+      <div class="src">
+        <div class="src-head">
+          <span><span class="dot3"><span></span><span></span><span></span></span> CreateOrderCommand.cs · 482 lines</span>
+          <span>C# · 18 symbols</span>
+        </div>
+        <div class="src-scroll">
+          <div class="src-scroll-inner" id="src-inner"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 2: PIPELINE (source → parse → skeleton → persist) ============ -->
+  <section class="scene" id="sc-scan">
+    <div class="pipe">
+      <div class="pipe-status">
+        <span class="pipe-dot"></span>
+        <span class="pipe-cmd">$ ast-graph scan orders-service/</span>
+        <span class="pipe-elapsed">running…</span>
+      </div>
+
+      <div class="pipe-grid">
+        <!-- STAGE 01 — SOURCE -->
+        <div class="pipe-card" data-stage="1">
+          <div class="pc-tag">01 · INPUT</div>
+          <div class="pc-head">Any codebase</div>
+          <div class="pc-sub">Point at the repo root. Multi-language, no config.</div>
+          <div class="pc-chips">
+            <span>C#</span><span>TS</span><span>Go</span><span>Rust</span><span>Java</span>
+          </div>
+          <div class="pc-metric">
+            <span class="pc-metric-num" id="s-files">0</span>
+            <span class="pc-metric-lbl">files</span>
+          </div>
+        </div>
+
+        <div class="pipe-arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 14"><path d="M 2 7 L 34 7" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M 30 2 L 38 7 L 30 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- STAGE 02 — TREE-SITTER -->
+        <div class="pipe-card" data-stage="2">
+          <div class="pc-tag">02 · PARSE</div>
+          <div class="pc-head">tree-sitter AST</div>
+          <div class="pc-sub">Incremental parser. Compress to structural nodes only.</div>
+          <div class="pc-chips">
+            <span>grammar</span><span>incremental</span>
+          </div>
+          <div class="pc-metric">
+            <span class="pc-metric-num">&lt;1</span>
+            <span class="pc-metric-lbl">ms/file</span>
+          </div>
+        </div>
+
+        <div class="pipe-arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 14"><path d="M 2 7 L 34 7" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M 30 2 L 38 7 L 30 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- STAGE 03 — SKELETON -->
+        <div class="pipe-card" data-stage="3">
+          <div class="pc-tag">03 · SKELETON</div>
+          <div class="pc-head">Structural graph</div>
+          <div class="pc-sub">Functions, classes, imports, calls — lifted into typed nodes &amp; edges.</div>
+          <div class="pc-chips">
+            <span>:Symbol</span><span>:CALLS</span><span>:IMPORTS</span>
+          </div>
+          <div class="pc-metric pc-metric-stack">
+            <div class="pc-mrow">
+              <span class="pc-metric-num" id="s-syms">0</span>
+              <span class="pc-metric-lbl">symbols</span>
+            </div>
+            <div class="pc-mrow">
+              <span class="pc-metric-num" id="s-edges">0</span>
+              <span class="pc-metric-lbl">call edges</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pipe-arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 14"><path d="M 2 7 L 34 7" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M 30 2 L 38 7 L 30 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- STAGE 04 — STORAGE -->
+        <div class="pipe-card" data-stage="4">
+          <div class="pc-tag">04 · PERSIST</div>
+          <div class="pc-head">Pluggable backend</div>
+          <div class="pc-sub">Pick your tradeoff. Swap anytime.</div>
+          <div class="pc-backends">
+            <div class="be">
+              <div class="be-name">SQLite</div>
+              <div class="be-tag">zero-setup · single file</div>
+            </div>
+            <div class="be be-alt">
+              <div class="be-name">FalkorDB</div>
+              <div class="be-tag">Redis module · OpenCypher</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 3: GRAPH ============ -->
+  <section class="scene" id="sc-graph">
+    <div class="graph">
+      <div class="graph-head">
+        <div class="graph-sub">CreateOrderCommand.cs · abstract syntax tree · 33 nodes, 32 edges</div>
+      </div>
+      <div class="graph-svg-wrap">
+        <svg class="graph-svg" viewBox="0 0 1600 720" preserveAspectRatio="xMidYMid meet" id="graph-svg"></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 4: WHAT AST-GRAPH IS GOOD AT ============ -->
+  <section class="scene" id="sc-query">
+    <div class="features">
+      <div class="fx" data-i="0" data-glyph="⚡">
+        <div class="fx-badge">ms</div>
+        <div class="fx-head">Milliseconds per query</div>
+        <div class="fx-sub">Cached graph · indexed FalkorDB</div>
+      </div>
+      <div class="fx" data-i="1" data-glyph="◉">
+        <div class="fx-badge">⌁</div>
+        <div class="fx-head">Whole-repo hotspots</div>
+        <div class="fx-sub">Fan-in ranked · no scan blind spots</div>
+      </div>
+      <div class="fx" data-i="2" data-glyph="✓">
+        <div class="fx-badge">=</div>
+        <div class="fx-head">Exact counts</div>
+        <div class="fx-sub">AST-aware · no grep false positives</div>
+      </div>
+      <div class="fx" data-i="3" data-glyph="↝">
+        <div class="fx-badge">→→</div>
+        <div class="fx-head">Long call chains</div>
+        <div class="fx-sub">Variable-length path traversal in one query</div>
+      </div>
+      <div class="fx" data-i="4" data-glyph="⎇">
+        <div class="fx-badge">git</div>
+        <div class="fx-head">Git-aware PR review</div>
+        <div class="fx-sub">Blast-radius · changed-symbols · dead-code</div>
+      </div>
+      <div class="fx" data-i="5" data-glyph="◆">
+        <div class="fx-badge">LLM</div>
+        <div class="fx-head">AI context export</div>
+        <div class="fx-sub">Compact skeleton format for agents</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ============================================================
+   Scene timeline
+   Times in ms; each scene activates at .at and deactivates when next starts.
+   ============================================================ */
+const TIMELINE = {
+  scene1Start: 0,     // before: tree + scrolling code       (4.2s)
+  scene2Start: 4200,  // pipeline cards cascade + counters   (5.2s — slower & more breathing room)
+  scene3Start: 9400,  // AST tree grows from root            (5.8s)
+  scene4Start: 15200, // feature grid                        (5.5s)
+  loopPauseAt: 20700,
+};
+
+/* ---------- Scene 1 data: tree + source ---------- */
+const TREE_DATA = [
+  { indent: 0, text: 'Core/',                      cls: 'dim' },
+  { indent: 1, text: 'App.Core/',                  cls: 'dim' },
+  { indent: 2, text: 'Features/',                  cls: 'dim' },
+  { indent: 3, text: 'Orders/',                    cls: '' },
+  { indent: 4, text: 'CreateOrderCommand.cs',      cls: 'file' },
+  { indent: 4, text: 'UpdateOrderCommand.cs',      cls: 'dim' },
+  { indent: 4, text: 'CancelOrderCommand.cs',      cls: 'dim' },
+  { indent: 4, text: 'OrderQueries.cs',            cls: 'dim' },
+  { indent: 3, text: 'Payments/',                  cls: 'dim' },
+  { indent: 4, text: 'ProcessPaymentCommand.cs',   cls: 'dim' },
+  { indent: 4, text: 'RefundPaymentCommand.cs',    cls: 'dim' },
+  { indent: 3, text: 'Shipping/',                  cls: 'dim' },
+  { indent: 4, text: 'ShipOrderCommand.cs',        cls: 'dim' },
+  { indent: 4, text: 'MarkDeliveredCommand.cs',    cls: 'dim' },
+  { indent: 3, text: 'Customers/',                 cls: 'dim' },
+  { indent: 4, text: 'CustomerQueries.cs',         cls: 'dim' },
+  { indent: 3, text: 'Inventory/',                 cls: 'dim' },
+  { indent: 4, text: 'InventoryService.cs',        cls: 'dim' },
+  { indent: 2, text: 'Domain/',                    cls: 'dim' },
+  { indent: 3, text: 'Order.cs',                   cls: 'dim' },
+  { indent: 3, text: 'LineItem.cs',                cls: 'dim' },
+  { indent: 3, text: 'Shipment.cs',                cls: 'dim' },
+  { indent: 1, text: 'App.Application/',           cls: 'dim' },
+  { indent: 2, text: 'Validation/',                cls: 'dim' },
+  { indent: 2, text: 'Pipelines/',                 cls: 'dim' },
+  { indent: 0, text: 'Infrastructure/',            cls: 'dim' },
+  { indent: 1, text: 'App.Infra.Kafka/',           cls: 'dim' },
+  { indent: 2, text: 'KafkaProducer.cs',           cls: 'dim' },
+  { indent: 1, text: 'App.Infra.Persistence/',     cls: 'dim' },
+  { indent: 2, text: 'OrdersDbContext.cs',         cls: 'dim' },
+  { indent: 1, text: 'App.Infra.Grpc/',            cls: 'dim' },
+  { indent: 0, text: 'Services/',                  cls: 'dim' },
+  { indent: 1, text: 'App.Gateway.Api/',           cls: 'dim' },
+  { indent: 2, text: 'V1/Controllers/',            cls: 'dim' },
+  { indent: 3, text: 'OrdersController.cs',        cls: 'dim' },
+  { indent: 3, text: 'PaymentsController.cs',      cls: 'dim' },
+  { indent: 3, text: 'ShippingController.cs',      cls: 'dim' },
+  { indent: 2, text: 'Middleware/',                cls: 'dim' },
+  { indent: 3, text: 'AuthMiddleware.cs',          cls: 'dim' },
+  { indent: 3, text: 'ContextHeaderFilter.cs',     cls: 'dim' },
+  { indent: 3, text: 'ValidationFilter.cs',        cls: 'dim' },
+  { indent: 1, text: 'App.Worker.Notifications/',  cls: 'dim' },
+  { indent: 0, text: 'Tests/',                     cls: 'dim' },
+  { indent: 1, text: 'App.UnitTests/',             cls: 'dim' },
+  { indent: 1, text: 'App.Integration/',           cls: 'dim' },
+  { indent: 1, text: 'App.Harness/',               cls: 'dim' },
+  { indent: 2, text: 'TestBroker.cs',              cls: 'dim' },
+];
+
+const SRC_LINES = [
+  ['1',   'using',  'System;', ''],
+  ['2',   'using',  'System.Collections.Generic;', ''],
+  ['3',   'using',  'System.Linq;', ''],
+  ['4',   'using',  'System.Threading;', ''],
+  ['5',   'using',  'System.Threading.Tasks;', ''],
+  ['6',   'using',  'FluentResults;', ''],
+  ['7',   'using',  'Mediator;', ''],
+  ['8',   'using',  'App.Domain.Orders;', ''],
+  ['9',   'using',  'App.Infra.Kafka;', ''],
+  ['10',  '',       '', ''],
+  ['11',  'namespace', 'App.Core.Features.Orders;', ''],
+  ['12',  '',       '', ''],
+  ['13',  '',       '/// <summary>Create an order, emit domain events, publish to Kafka.</summary>', 'cmt'],
+  ['14',  '',       '/// <remarks>Handler is ~480 lines — the largest command in the service.</remarks>', 'cmt'],
+  ['19',  'public sealed class', 'CreateOrderCommand : ICommand<Result<CreateOrderResult>>', ''],
+  ['20',  '', '{', ''],
+  ['21',  'public', 'Guid? OrderId { get; set; }', ''],
+  ['22',  'public string', 'CustomerName { get; set; } = string.Empty;', ''],
+  ['23',  'public', 'DateTime PlacedAt { get; set; }', ''],
+  ['24',  'public', 'DateTime? FulfillBy { get; set; }', ''],
+  ['25',  'public', 'Guid ChannelId { get; set; }', ''],
+  ['26',  'public', 'IReadOnlyList<LineItemModel> LineItems { get; set; }', ''],
+  ['27',  'public', 'IReadOnlyList<ShipmentModel> Shipments { get; set; }', ''],
+  ['28',  'public', 'IReadOnlyList<OrderTagModel> Tags { get; set; }', ''],
+  ['29',  '',  '// … 6 more properties', 'cmt'],
+  ['36',  'public sealed class', 'LineItemModel { public Guid Sku; public int Qty; public decimal UnitPrice; }', ''],
+  ['44',  'public sealed class', 'ShipmentModel { public Guid CarrierId; public string TrackingNo; }', ''],
+  ['53',  'public sealed class', 'OrderTagModel { public Guid Id; public object Value; }', ''],
+  ['58',  '', '}', ''],
+  ['60',  'public sealed class', 'CreateOrderResult { public Guid OrderId { get; init; } }', ''],
+  ['66',  'public sealed class', 'CreateOrderValidator : BaseValidator<CreateOrderCommand>', ''],
+  ['67',  '', '{', ''],
+  ['68',  'public', 'CreateOrderValidator()', 'fn'],
+  ['69',  '', '{', ''],
+  ['70',  '', '    RuleFor(x => x.CustomerName).NotEmpty().MaximumLength(200);', ''],
+  ['71',  '', '    RuleFor(x => x.PlacedAt).LessThanOrEqualTo(DateTime.UtcNow);', ''],
+  ['72',  '', '    RuleFor(x => x.ChannelId).NotEqual(Guid.Empty);', ''],
+  ['73',  '', '    RuleForEach(x => x.LineItems).SetValidator(new LineItemModelValidator());', ''],
+  ['74',  '',    '// … 20 more rules', 'cmt'],
+  ['98',  '', '}', ''],
+  ['100', 'public sealed class', 'CreateOrderCommandHandler : BaseCommandHandler<CreateOrderCommand, Result<CreateOrderResult>>', ''],
+  ['101', '', '{', ''],
+  ['102', 'private readonly', 'ILogger<CreateOrderCommandHandler> _logger;', ''],
+  ['103', 'private readonly', 'ITenantContextResolver _tenantResolver;', ''],
+  ['104', 'private readonly', 'ICurrentContext _currentContext;', ''],
+  ['105', 'private readonly', 'IMediator _mediator;', ''],
+  ['106', 'private readonly', 'IKafkaProducer<Guid, OrderCreatedEvent> _kafkaCreated;', ''],
+  ['107', 'private readonly', 'IKafkaProducer<Guid, OrderUpdatedEvent> _kafkaUpdated;', ''],
+  ['108', 'private readonly', 'IInventoryGrpcService _inventoryService;', ''],
+  ['109', 'private readonly', 'ICustomerPolicyService _customerPolicyService;', ''],
+  ['111', 'public', 'CreateOrderCommandHandler(/* 8 injected deps */) { /* assignments */ }', 'fn'],
+  ['131', 'public override async', 'Task<Result<CreateOrderResult>> Handle(CreateOrderCommand cmd, CancellationToken ct)', 'fn'],
+  ['132', '', '{', ''],
+  ['133', 'var', 'overInventoryLimit = await CheckInventoryLimit(cmd);', ''],
+  ['134', 'if', '(overInventoryLimit)', ''],
+  ['135', '',    '    return Result.Fail<CreateOrderResult>(InventoryErrors.OutOfStock);', ''],
+  ['137', 'var', 'tenant = _tenantResolver.GetCurrentTenant();', ''],
+  ['138', 'var', 'existed = await _mediator.Send(new GetOrderByIdQuery(cmd.OrderId), ct);', ''],
+  ['140', 'var', 'permissionOk = await _customerPolicyService.HavePermissionOnOrder(tenant.UserId, cmd.OrderId);', ''],
+  ['141', 'if',  '(!permissionOk) return Result.Fail<CreateOrderResult>(OrderErrors.Forbidden);', ''],
+  ['143', 'await','ValidateCustomerPermission(cmd, tenant);', ''],
+  ['150', '',    '// map the DTO into domain aggregate', 'cmt'],
+  ['151', 'var', 'lineItems = ToLineItems(cmd).ToList();', ''],
+  ['152', 'var', 'shipments = ToShipments(cmd).ToList();', ''],
+  ['153', 'var', 'tags      = ToOrderTags(cmd).ToList();', ''],
+  ['160', 'var', 'reservationId = await _inventoryService.Reserve(cmd.OrderId ?? Guid.NewGuid());', ''],
+  ['170', 'var', 'order = existed is null', ''],
+  ['171', '',    '    ? Order.Create(cmd, lineItems, shipments, tags, reservationId)', ''],
+  ['172', '',    '    : existed.Apply(cmd, lineItems, shipments, tags);', ''],
+  ['180', 'await','_mediator.Send(new SaveOrderCommand(order), ct);', ''],
+  ['181', 'await','_mediator.Send(new IndexOrderCommand(order.Id), ct);', ''],
+  ['190', 'var', 'domainEvents = GetDomainEvents(existed, cmd);', ''],
+  ['191', 'foreach', '(var ev in domainEvents)', ''],
+  ['192', 'await', '_mediator.Publish(ev, ct);', ''],
+  ['200', 'if',  '(existed is null) await _PublishOrderCreated(order, tenant);', ''],
+  ['201', 'else', '                  await _PublishOrderUpdated(order, tenant);', ''],
+  ['210', 'return','Result.Ok(new CreateOrderResult { OrderId = order.Id });', ''],
+  ['317', '', '}', ''],
+  ['319', 'private', 'IEnumerable<IDomainEvent> GetDomainEvents(Order? existed, CreateOrderCommand cmd)', 'fn'],
+  ['320', '', '{', ''],
+  ['325', '',  '// diff existed vs cmd and produce OrderFieldsChanged / ShipmentsChanged / …', 'cmt'],
+  ['358', '', '}', ''],
+  ['360', 'private async Task<bool>', 'CheckInventoryLimit(CreateOrderCommand cmd)', 'fn'],
+  ['361', '', '{', ''],
+  ['365', 'var', 'limit = await _mediator.Send(new GetInventoryLimitQuery());', ''],
+  ['366', 'return', 'cmd.LineItems.Sum(li => li.Qty) > limit.HardLimit;', ''],
+  ['372', '', '}', ''],
+  ['373', 'private async Task', 'ValidateCustomerPermission(CreateOrderCommand cmd, TenantContext tenant)', 'fn'],
+  ['395', '', '}', ''],
+  ['397', 'private async', 'Task _PublishOrderCreated(Order order, TenantContext tenant)', 'fn'],
+  ['398', '', '{', ''],
+  ['410', 'await', '_kafkaCreated.Publish(order.Id, new OrderCreatedEvent(order, tenant.TenantId));', ''],
+  ['425', '', '}', ''],
+  ['427', 'private async', 'Task _PublishOrderUpdated(Order order, TenantContext tenant)', 'fn'],
+  ['440', 'await', '_kafkaUpdated.Publish(order.Id, new OrderUpdatedEvent(order, tenant.TenantId));', ''],
+  ['452', '', '}', ''],
+  ['454', 'private', 'IEnumerable<LineItem> ToLineItems(CreateOrderCommand cmd) => cmd.LineItems.Select(Map);', 'fn'],
+  ['463', 'private', 'IEnumerable<Shipment> ToShipments(CreateOrderCommand cmd) => cmd.Shipments.Select(Map);', 'fn'],
+  ['474', 'private', 'IEnumerable<OrderTag> ToOrderTags(CreateOrderCommand cmd) => cmd.Tags.Select(Map);', 'fn'],
+  ['482', '', '}', ''],
+];
+
+function buildTree() {
+  const host = document.getElementById('tree-rows');
+  host.innerHTML = TREE_DATA.map((r, i) => {
+    const pad = '  '.repeat(r.indent);
+    const glyph = r.indent === 0 ? '' : '├─ ';
+    return `<div class="tree-row ${r.cls || ''}" data-i="${i}"><span class="indent">${pad}${glyph}</span>${r.text}</div>`;
+  }).join('');
+}
+function buildSrc() {
+  const host = document.getElementById('src-inner');
+  // Repeat the lines so the scroll has enough content to travel through.
+  const all = SRC_LINES.concat(SRC_LINES).concat(SRC_LINES);
+  host.innerHTML = all.map(([ln, kw, rest, extra]) => {
+    const kwHtml = kw ? `<span class="kw">${kw}</span> ` : '';
+    const cls = extra === 'cmt' ? 'cmt' : extra === 'fn' ? 'fn' : '';
+    const restHtml = cls ? `<span class="${cls}">${rest}</span>` : rest;
+    return `<div class="src-line"><span class="ln">${ln}</span><span class="code">${kwHtml}${restHtml}</span></div>`;
+  }).join('');
+}
+buildTree();
+buildSrc();
+
+/* ---------- Scene 3 graph: hand-placed subgraph (1600x720 canvas) ---------- */
+// tier 0 = core cluster (revealed while zoomed in)
+// tier 1 = mid ring (revealed as zoom-out begins)
+// tier 2 = far ring (revealed near full zoom)
+// Scene 3 visualizes a real AST — root at top, children flowing down,
+// growing level-by-level. Balanced subtrees on LEFT (CreateOrderCommand →
+// nested type → method) and RIGHT (CreateOrderHandler → method Handle →
+// statements) so the tree fills the canvas symmetrically.
+// Kinds drive visual emphasis: root / decl / stmt / expr / leaf.
+const GRAPH_NODES = [
+  // ===== L0 — root =====
+  { id: 'r',    label: 'compilation_unit',            level: 0, x: 710, y:  20, w: 180, kind: 'root', shape: 'rect' },
+
+  // ===== L1 =====
+  { id: 'u',    label: 'using × 9',                   level: 1, x: 110, y: 110, w: 140, kind: 'decl', shape: 'rect' },
+  { id: 'ns',   label: 'namespace Orders',            level: 1, x: 690, y: 110, w: 220, kind: 'decl', shape: 'rect' },
+
+  // ===== L2 — four classes, balanced around ns =====
+  { id: 'c1',   label: 'class CreateOrderCommand',    level: 2, x: 215, y: 200, w: 250, kind: 'decl', shape: 'rect' },
+  { id: 'c2',   label: 'class CreateOrderResult',     level: 2, x: 520, y: 200, w: 240, kind: 'decl', shape: 'rect' },
+  { id: 'c3',   label: 'class CreateOrderValidator',  level: 2, x: 830, y: 200, w: 260, kind: 'decl', shape: 'rect' },
+  { id: 'c4',   label: 'class CreateOrderHandler',    level: 2, x: 1130, y: 200, w: 260, kind: 'decl', shape: 'rect' },
+
+  // ===== L3 =====
+  // LEFT — under c1 (Command class)
+  { id: 'p1',   label: 'property × 9',                level: 3, x: 140, y: 290, w: 140, kind: 'decl', shape: 'rect' },
+  { id: 'p2',   label: 'class TimeSlotModel',         level: 3, x: 300, y: 290, w: 210, kind: 'decl', shape: 'rect' },
+  // RIGHT — under c4 (Handler class)
+  { id: 'f',    label: 'field × 8',                   level: 3, x: 890, y: 290, w: 140, kind: 'decl', shape: 'rect' },
+  { id: 'ct',   label: '.ctor',                       level: 3, x: 1045, y: 290, w:  90, kind: 'stmt', shape: 'rect' },
+  { id: 'h',    label: 'method Handle()',             level: 3, x: 1155, y: 290, w: 170, kind: 'stmt', shape: 'rect' },
+  { id: 'g',    label: 'method getEvents()',          level: 3, x: 1345, y: 290, w: 200, kind: 'stmt', shape: 'rect' },
+
+  // ===== L4 =====
+  // LEFT — under p2 (nested class TimeSlotModel)
+  { id: 'f2',   label: 'field × 3',                   level: 4, x: 180, y: 380, w: 140, kind: 'decl', shape: 'rect' },
+  { id: 'ct2',  label: '.ctor',                       level: 4, x: 335, y: 380, w:  90, kind: 'stmt', shape: 'rect' },
+  { id: 'm2',  label: 'method Map()',                  level: 4, x: 440, y: 380, w: 150, kind: 'stmt', shape: 'rect' },
+  // RIGHT — under h (method Handle)
+  { id: 'pr',   label: 'parameters',                  level: 4, x: 1010, y: 380, w: 140, kind: 'stmt', shape: 'rect' },
+  { id: 'rt',   label: 'return_type',                 level: 4, x: 1160, y: 380, w: 140, kind: 'stmt', shape: 'rect' },
+  { id: 'bl',   label: 'block',                       level: 4, x: 1320, y: 380, w:  90, kind: 'stmt', shape: 'rect' },
+
+  // ===== L5 =====
+  // LEFT — under m2 (method Map)
+  { id: 'pr2',  label: 'parameters',                  level: 5, x: 335, y: 470, w: 130, kind: 'stmt', shape: 'rect' },
+  { id: 'rt2',  label: 'return_type',                 level: 5, x: 475, y: 470, w: 130, kind: 'stmt', shape: 'rect' },
+  { id: 'bl2',  label: 'block',                       level: 5, x: 620, y: 470, w:  90, kind: 'stmt', shape: 'rect' },
+  // RIGHT — under bl (block)
+  { id: 'lv',   label: 'local_var',                   level: 5, x: 1135, y: 470, w: 130, kind: 'expr', shape: 'rect' },
+  { id: 'is',   label: 'if_statement',                level: 5, x: 1280, y: 470, w: 140, kind: 'expr', shape: 'rect' },
+  { id: 'ce',   label: 'invocation_expr',             level: 5, x: 1430, y: 470, w: 160, kind: 'expr', shape: 'rect' },
+
+  // ===== L6 =====
+  // LEFT — under bl2
+  { id: 'as2',  label: 'assignment',                  level: 6, x: 490, y: 560, w: 140, kind: 'expr', shape: 'rect' },
+  { id: 'ret2', label: 'return_stmt',                 level: 6, x: 645, y: 560, w: 140, kind: 'expr', shape: 'rect' },
+  // RIGHT — under is (if_statement)
+  { id: 'co',   label: 'condition',                   level: 6, x: 1230, y: 560, w: 120, kind: 'expr', shape: 'rect' },
+  { id: 'tb',   label: 'then_branch',                 level: 6, x: 1365, y: 560, w: 140, kind: 'expr', shape: 'rect' },
+
+  // ===== L7 — leaves =====
+  // LEFT — under as2
+  { id: 'tg2',  label: '"result.X"',                  level: 7, x: 430, y: 640, w: 130, kind: 'leaf', shape: 'ell'  },
+  { id: 'vl2',  label: 'literal 0',                   level: 7, x: 575, y: 640, w: 120, kind: 'leaf', shape: 'ell'  },
+  // RIGHT — under co
+  { id: 'id',   label: '"overLimit"',                 level: 7, x: 1175, y: 640, w: 120, kind: 'leaf', shape: 'ell'  },
+  { id: 'bp',   label: 'binary_op  ≥',                level: 7, x: 1300, y: 640, w: 130, kind: 'leaf', shape: 'ell'  },
+];
+
+// AST tree edges — each tuple is [parent, child]. Symmetric tree:
+// LEFT branch: c1 → p2 → m2 → bl2 → as2 → leaves
+// RIGHT branch: c4 → h → bl → is → co → leaves
+const GRAPH_EDGES = [
+  // root → L1
+  ['r',  'u'],
+  ['r',  'ns'],
+  // namespace → L2 classes
+  ['ns', 'c1'],
+  ['ns', 'c2'],
+  ['ns', 'c3'],
+  ['ns', 'c4'],
+  // command class → L3
+  ['c1', 'p1'],
+  ['c1', 'p2'],
+  // handler class → L3
+  ['c4', 'f'],
+  ['c4', 'ct'],
+  ['c4', 'h'],
+  ['c4', 'g'],
+  // LEFT: nested class → L4
+  ['p2', 'f2'],
+  ['p2', 'ct2'],
+  ['p2', 'm2'],
+  // RIGHT: method Handle → L4
+  ['h',  'pr'],
+  ['h',  'rt'],
+  ['h',  'bl'],
+  // LEFT: method Map → L5
+  ['m2', 'pr2'],
+  ['m2', 'rt2'],
+  ['m2', 'bl2'],
+  // RIGHT: block → L5
+  ['bl', 'lv'],
+  ['bl', 'is'],
+  ['bl', 'ce'],
+  // LEFT: block → L6
+  ['bl2', 'as2'],
+  ['bl2', 'ret2'],
+  // RIGHT: if_statement → L6
+  ['is', 'co'],
+  ['is', 'tb'],
+  // LEFT: assignment → L7 leaves
+  ['as2', 'tg2'],
+  ['as2', 'vl2'],
+  // RIGHT: condition → L7 leaves
+  ['co', 'id'],
+  ['co', 'bp'],
+];
+
+// Writers that transitively reach KafkaProducer.Publish — 5 rows in the answer table.
+const WRITER_IDS = ['pc', 'pu', 'pk', 'pc2', 'demo'];
+
+// Measure label width using the actual CSS font, then expand any node whose
+// declared width is narrower than the label + padding. Prevents text overflow.
+let _measureCtx = null;
+function measureLabelWidth(label) {
+  if (!_measureCtx) {
+    const c = document.createElement('canvas');
+    _measureCtx = c.getContext('2d');
+  }
+  _measureCtx.font = '600 11px "JetBrains Mono", ui-monospace, monospace';
+  return _measureCtx.measureText(label).width;
+}
+function fitNodeWidths() {
+  // Horizontal padding depends on shape: parallelograms and hexagons lose a
+  // bit of room at the middle-height where text lives; pad extra for those.
+  const PAD = { rect: 22, pill: 30, parallel: 30, hex: 36, ell: 24 };
+  GRAPH_NODES.forEach(n => {
+    const label = shortLabel(n.label);
+    const textW = Math.ceil(measureLabelWidth(label));
+    const needed = textW + (PAD[n.shape] || 24);
+    if (needed > n.w) n.w = needed;
+  });
+}
+
+function buildGraph() {
+  fitNodeWidths();
+  const svg = document.getElementById('graph-svg');
+  const nodeById = Object.fromEntries(GRAPH_NODES.map(n => [n.id, n]));
+
+  // Edges first so nodes draw on top
+  const edgePaths = GRAPH_EDGES.map(([s, t], i) => {
+    const a = nodeById[s], b = nodeById[t];
+    const h = 36;
+    // Parent bottom-center → child top-center, with a gentle S-curve so
+    // horizontal offsets don't look stiff.
+    const x1 = a.x + a.w / 2;
+    const y1 = a.y + h;
+    const x2 = b.x + b.w / 2;
+    const y2 = b.y;
+    const my = y1 + (y2 - y1) * 0.55;
+    const d  = `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${y1 + (y2 - y1) * 0.45}, ${x2} ${y2}`;
+    const levelDiff = Math.abs((a.level | 0) - (b.level | 0));
+    return `<path class="g-edge" data-i="${i}" data-s="${s}" data-t="${t}" data-level="${levelDiff}" d="${d}"/>`;
+  }).join('');
+
+  const nodeGroups = GRAPH_NODES.map(n => {
+    const label = shortLabel(n.label);
+    const h = 36;
+    const shape = nodeShapeSvg(n.shape, n.w, h);
+    return `<g class="g-node ${n.kind} shape-${n.shape}" data-id="${n.id}" data-tier="${n.tier}"
+              transform="translate(${n.x},${n.y})">
+              ${shape}
+              <text class="lbl" x="${n.w/2}" y="${h/2}">${label}</text>
+            </g>`;
+  }).join('');
+
+  svg.innerHTML = `
+    <defs>
+      <!-- Default arrow — neutral grey ink -->
+      <marker id="arr" viewBox="0 -4 10 8" refX="9" refY="0" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M 0 -3 L 10 0 L 0 3 Z" fill="#8c8980"/>
+      </marker>
+      <!-- Rust arrow for writer → goal -->
+      <marker id="arr-hot" viewBox="0 -4 10 8" refX="9" refY="0" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M 0 -3.2 L 10 0 L 0 3.2 Z" fill="#d14800"/>
+      </marker>
+      <!-- Soft rust halo around the root node -->
+      <filter id="glow-goal" x="-40%" y="-80%" width="180%" height="260%">
+        <feGaussianBlur stdDeviation="4" result="b"/>
+        <feFlood flood-color="#d14800" flood-opacity="0.35"/>
+        <feComposite in2="b" operator="in" result="glow"/>
+        <feMerge>
+          <feMergeNode in="glow"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    ${edgePaths}
+    ${nodeGroups}
+  `;
+}
+function shortLabel(s) {
+  if (s.length <= 36) return s;
+  return s.slice(0, 34) + '…';
+}
+
+function nodeShapeSvg(shape, w, h) {
+  if (shape === 'rect') {
+    return `<rect class="nshape" width="${w}" height="${h}"/>`;
+  }
+  if (shape === 'pill') {
+    // Same as rect but full-height rounded — reads as a service capsule.
+    return `<rect class="nshape" width="${w}" height="${h}" rx="${h/2}" ry="${h/2}"/>`;
+  }
+  if (shape === 'parallel') {
+    // Right-leaning parallelogram — classic "input/entry" glyph for controllers/filters.
+    const k = 9;
+    return `<polygon class="nshape" points="${k},0 ${w},0 ${w-k},${h} 0,${h}"/>`;
+  }
+  if (shape === 'hex') {
+    // Flat-top hexagon — publishers + the Kafka goal.
+    const k = 14;
+    return `<polygon class="nshape" points="${k},0 ${w-k},0 ${w},${h/2} ${w-k},${h} ${k},${h} 0,${h/2}"/>`;
+  }
+  if (shape === 'ell') {
+    // Capsule ellipse — side systems (hub, dispatch, audit, metrics, logger).
+    return `<ellipse class="nshape" cx="${w/2}" cy="${h/2}" rx="${w/2}" ry="${h/2}"/>`;
+  }
+  // fallback
+  return `<rect class="nshape" width="${w}" height="${h}"/>`;
+}
+buildGraph();
+
+/* ---------- Scene 4: feature grid ---------- */
+function revealFeatures() {
+  const cards = document.querySelectorAll('.fx');
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('in'), i * 220));
+}
+
+/* ---------- timeline driver ---------- */
+const HERO_LINES = {
+  'sc-before': `Made for codebases that <b>outgrew you</b>.`,
+  'sc-scan':   `Every file. Every call. <b>In seconds.</b>`,
+  'sc-graph':  `A <b>map</b> your team <em>and AI</em> can navigate.`,
+  'sc-query':  `Answer questions that used to take <b>hours</b>.`,
+};
+const SCENE_STEP = {
+  'sc-before': 1,
+  'sc-scan':   2,
+  'sc-graph':  3,
+  'sc-query':  4,
+};
+function setHero(id) {
+  const slot = document.getElementById('hero-slot');
+  if (!slot) return;
+  slot.classList.remove('in');
+  setTimeout(() => {
+    slot.innerHTML = HERO_LINES[id] || '';
+    void slot.offsetWidth;
+    slot.classList.add('in');
+  }, 250);
+}
+function setProgress(id) {
+  const step = SCENE_STEP[id] || 1;
+  const cur = document.getElementById('p-cur');
+  const fill = document.getElementById('p-fill');
+  if (cur) cur.textContent = String(step).padStart(2, '0');
+  if (fill) fill.style.width = (step * 25) + '%';
+}
+function setActive(id) {
+  document.querySelectorAll('.scene').forEach(s => s.classList.toggle('active', s.id === id));
+  setHero(id);
+  setProgress(id);
+}
+
+let animTimers = [];
+function schedule(t, fn) { animTimers.push(setTimeout(fn, t)); }
+
+function animateViewBox(svg, from, to, dur) {
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const vb = from.map((v, i) => v + (to[i] - v) * eased);
+    svg.setAttribute('viewBox', vb.join(' '));
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function countTo(id, target, dur) {
+  const el = document.getElementById(id);
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(eased * target).toLocaleString();
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function runLoop() {
+  animTimers.forEach(clearTimeout);
+  animTimers = [];
+
+  // reset scene states
+  const stage = document.getElementById('stage');
+  stage.classList.remove('scene1-playing');
+
+  // Snap the code scroller back to the top with NO transition so it's
+  // fully rearmed before scene 1 re-triggers. Without this the transform
+  // is still mid-animation from the previous loop and the second pass
+  // barely moves.
+  const srcInner = document.getElementById('src-inner');
+  if (srcInner) {
+    srcInner.style.transition = 'none';
+    srcInner.style.transform = 'translateY(0)';
+    void srcInner.offsetWidth;   // force reflow
+    srcInner.style.transition = '';
+    srcInner.style.transform = '';
+  }
+
+  // Tree: show all rows (we scroll the column like the code, not row-by-row).
+  document.querySelectorAll('.tree-row').forEach(r => r.style.opacity = '1');
+
+  // Rearm tree scroll the same way we rearm the code scroll.
+  const treeInner = document.getElementById('tree-rows');
+  if (treeInner) {
+    treeInner.style.transition = 'none';
+    treeInner.style.transform = 'translateY(0)';
+    void treeInner.offsetWidth;
+    treeInner.style.transition = '';
+    treeInner.style.transform = '';
+  }
+
+  // Graph: pre-hide nodes + edges and restore zoomed-in viewBox for the next pass.
+  document.querySelectorAll('.g-node').forEach(n => {
+    n.classList.remove('in', 'writer', 'goal');
+  });
+  document.querySelectorAll('.g-edge').forEach(e => e.classList.remove('in', 'hl'));
+  const gsvg = document.getElementById('graph-svg');
+  if (gsvg) gsvg.setAttribute('viewBox', '0 0 1600 720');
+
+  // Scan counters: reset.
+  document.getElementById('s-files').textContent = '0';
+  document.getElementById('s-syms').textContent = '0';
+  document.getElementById('s-edges').textContent = '0';
+
+  // Feature cards + pipe stages: hide so they re-stagger on the next pass.
+  document.querySelectorAll('.fx').forEach(c => c.classList.remove('in'));
+  document.querySelectorAll('.pipe-card, .pipe-arrow').forEach(c => c.classList.remove('in'));
+
+  // Reset progress bar to 0 before scene 1 animates it to 25%.
+  const pf = document.getElementById('p-fill');
+  if (pf) {
+    pf.style.transition = 'none';
+    pf.style.width = '0%';
+    void pf.offsetWidth;
+    pf.style.transition = '';
+  }
+
+  setActive('sc-before');
+  // Both columns scroll together for symmetry — triggered by the shared
+  // .scene1-playing class on the stage.
+  schedule(400, () => stage.classList.add('scene1-playing'));
+
+  // Scene 2: pipeline — cards cascade left→right, arrows trail between them,
+  // counters tick up once the skeleton card lands.
+  schedule(TIMELINE.scene2Start, () => {
+    setActive('sc-scan');
+    const cards  = document.querySelectorAll('.pipe-card');
+    const arrows = document.querySelectorAll('.pipe-arrow');
+    const CARD_STEP   = 520;  // gap between card reveals
+    const ARROW_DELAY = 260;  // arrow trails its preceding card by this much
+    cards.forEach((c, i)  => schedule(180 + i * CARD_STEP, () => c.classList.add('in')));
+    arrows.forEach((a, i) => schedule(180 + i * CARD_STEP + ARROW_DELAY, () => a.classList.add('in')));
+    // Counters kick off shortly after card 3 (the skeleton card) has landed.
+    const COUNTER_START = 180 + 2 * CARD_STEP + 320;
+    schedule(COUNTER_START,       () => countTo('s-files', 810, 900));
+    schedule(COUNTER_START + 250, () => countTo('s-syms', 10488, 1100));
+    schedule(COUNTER_START + 250, () => countTo('s-edges', 16903, 1200));
+  });
+
+  // Scene 3: AST tree — grows from root, level by level.
+  schedule(TIMELINE.scene3Start, () => {
+    setActive('sc-graph');
+    const svg = document.getElementById('graph-svg');
+    svg.setAttribute('viewBox', '0 0 1600 720');
+
+    // Bucket nodes by level, x-sorted within each.
+    const maxLevel = Math.max(...GRAPH_NODES.map(n => n.level));
+    const byLevel = Array.from({ length: maxLevel + 1 }, () => []);
+    GRAPH_NODES.forEach(n => byLevel[n.level].push(n));
+    byLevel.forEach(lv => lv.sort((a, b) => a.x - b.x));
+
+    // Reveal timing: root appears quickly, then one level every 380ms.
+    // Within a level, children stagger left→right with a short delay.
+    const LEVEL_GAP = 380;
+    const NODE_STAGGER = 90;
+    const nodeRevealAt = {};
+    byLevel.forEach((lv, li) => {
+      const levelStart = 200 + li * LEVEL_GAP;
+      lv.forEach((n, i) => {
+        nodeRevealAt[n.id] = levelStart + i * NODE_STAGGER;
+      });
+    });
+
+    GRAPH_NODES.forEach(n => {
+      schedule(nodeRevealAt[n.id], () => {
+        const el = document.querySelector(`.g-node[data-id="${n.id}"]`);
+        if (el) el.classList.add('in');
+      });
+    });
+
+    // Each edge draws as its child node lands (slight overlap looks organic).
+    GRAPH_EDGES.forEach(([s, t], i) => {
+      const at = nodeRevealAt[t] - 40;
+      schedule(Math.max(0, at), () => {
+        const el = document.querySelector(`.g-edge[data-i="${i}"]`);
+        if (el) el.classList.add('in');
+      });
+    });
+  });
+
+  // Scene 4: feature grid — stagger the six cards in.
+  schedule(TIMELINE.scene4Start, () => {
+    setActive('sc-query');
+    revealFeatures();
+  });
+
+  // Loop
+  schedule(TIMELINE.loopPauseAt, runLoop);
+}
+
+runLoop();
+</script>
+</body>
+</html>
