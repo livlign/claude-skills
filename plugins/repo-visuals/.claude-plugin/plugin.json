@@ -1,0 +1,9 @@
+{
+  "name": "repo-visuals",
+  "version": "0.1.0",
+  "description": "Animated GIFs or static PNG hero visuals for GitHub repos.",
+  "author": { "name": "livlign" },
+  "homepage": "https://github.com/livlign/claude-skills",
+  "repository": "https://github.com/livlign/claude-skills",
+  "keywords": ["hero-gif", "readme", "visualization", "puppeteer"]
+}

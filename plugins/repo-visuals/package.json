@@ -8,16 +8,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/livlign/repo-visuals.git"
+    "url": "git+https://github.com/livlign/claude-skills.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/livlign/repo-visuals/issues"
+    "url": "https://github.com/livlign/claude-skills/issues"
   },
-  "homepage": "https://github.com/livlign/repo-visuals#readme",
+  "homepage": "https://github.com/livlign/claude-skills#readme",
   "dependencies": {
     "puppeteer": "^24.42.0"
   }

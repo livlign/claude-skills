@@ -9,7 +9,7 @@ The `repo-visuals` skill scores every run on five criteria (see `repo-visuals/SK
 
 ## When to invoke
 
-- You have ≥ 5 runs logged in `repo-visuals/evaluations/runs/` (before that, the sample is noise).
+- You have ≥ 5 runs logged in `./evaluations/runs/` in the user's working directory (before that, the sample is noise).
 - Something feels off across multiple runs and you want a structured look.
 - A major change to `repo-visuals` is planned and you want the evidence base first.
 
@@ -17,9 +17,9 @@ Do **not** run this every session. Retros are more valuable with accumulated sam
 
 ## Inputs
 
-- `repo-visuals/SKILL.md` — the current skill definition
-- `repo-visuals/evaluations/index.md` — curated aggregate from previous retros
-- `repo-visuals/evaluations/runs/*.md` — all per-run raw evaluations since the last retro
+- The `repo-visuals` skill's `SKILL.md` — the current skill definition (sibling skill in the same plugin)
+- `./evaluations/index.md` in the user's working directory — curated aggregate from previous retros
+- `./evaluations/runs/*.md` in the user's working directory — all per-run raw evaluations since the last retro
 - Available expert skills in the environment (detected, not assumed)
 
 ## Workflow
@@ -53,7 +53,7 @@ Detect which skills are actually available — don't reference non-existent ones
 
 ### 4. Propose edits
 
-Write a diff-style proposal: for each pattern, which section of `repo-visuals/SKILL.md` changes and why. Example:
+Write a diff-style proposal: for each pattern, which section of the `repo-visuals` skill's `SKILL.md` changes and why. Example:
 
 ```
 Pattern: Hero moment delivery weak on CLI tools (2.6/5 avg over 4 runs).
@@ -69,14 +69,14 @@ Show the proposed diff. Wait for user approval before applying.
 
 On user approval:
 
-- Edit `repo-visuals/SKILL.md` with the approved changes
-- Append a retro summary to `repo-visuals/evaluations/index.md` (date, patterns identified, edits applied)
-- Move the raw run files that informed this retro into `repo-visuals/evaluations/runs/processed/` so the next retro only sees new samples
+- Edit the `repo-visuals` skill's `SKILL.md` with the approved changes
+- Append a retro summary to `./evaluations/index.md` (date, patterns identified, edits applied)
+- Move the raw run files that informed this retro into `./evaluations/runs/processed/` so the next retro only sees new samples
 
 ## Outputs
 
-- Updated `repo-visuals/SKILL.md`
-- Updated `repo-visuals/evaluations/index.md` with retro summary
+- Updated `repo-visuals` skill `SKILL.md`
+- Updated `./evaluations/index.md` with retro summary
 - Moved processed run files
 
 ## What this skill does NOT do

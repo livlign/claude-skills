@@ -17,7 +17,7 @@ The skill's quality comes from the **discovery dialog**, not from templates. Eve
 4. **Export** — animated → Puppeteer screencast + ffmpeg palette pipeline to GIF. Static → Puppeteer `page.screenshot` to PNG (with `deviceScaleFactor: 2` for retina crispness).
 5. **Output** — place the hero in the target repo; optionally open a PR that embeds it in the README.
 
-**Dev mode (author-only):** Phase 6 — Evaluate exists but **only runs in dev mode**. Dev mode is for the skill's author iterating on the skill itself; it collects scorecard data and writes run logs under `<skill-dir>/evaluations/`. Enable it only when the user explicitly says "dev mode" (or sets `REPO_VISUALS_DEV=1`). In every normal run — including Manual, Semi-auto, and Auto — the skill ends after Phase 5. Do not mention Phase 6 to end users.
+**Dev mode (author-only):** Phase 6 — Evaluate exists but **only runs in dev mode**. Dev mode is for the skill's author iterating on the skill itself; it collects scorecard data and writes run logs under `./evaluations/` in the user's current working directory. Enable it only when the user explicitly says "dev mode" (or sets `REPO_VISUALS_DEV=1`). In every normal run — including Manual, Semi-auto, and Auto — the skill ends after Phase 5. Do not mention Phase 6 to end users.
 
 ---
 
@@ -642,13 +642,15 @@ Display the completed table, grouped by rater, then compute an overall simple av
 
 ### 6.4 Evaluation log (two-tier)
 
-**Tier 1 — curated aggregate (committed):** `<skill-dir>/evaluations/index.md`
+Write all evaluation files under `./evaluations/` in the **user's current working directory** — NOT the plugin cache, which is wiped on `/plugin update`. Create the directory if it doesn't exist on first dev-mode run.
+
+**Tier 1 — curated aggregate (committed):** `./evaluations/index.md`
 - Rolling stats per criterion across runs
 - Notable lessons learned
 - Recurring failure modes
 - Edited by the meta-skill (Phase 6.5) during retros
 
-**Tier 2 — raw per-run files (gitignored by default):** `<skill-dir>/evaluations/runs/<YYYY-MM-DD>-<slug>.md`
+**Tier 2 — raw per-run files (gitignored by default):** `./evaluations/runs/<YYYY-MM-DD>-<slug>.md`
 - The brief
 - The scorecard
 - User's free-text feedback

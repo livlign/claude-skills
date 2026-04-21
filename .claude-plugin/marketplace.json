@@ -1,0 +1,13 @@
+{
+  "name": "livlign",
+  "owner": { "name": "livlign" },
+  "plugins": [
+    {
+      "name": "repo-visuals",
+      "source": "./plugins/repo-visuals",
+      "description": "Animated GIFs or static PNG hero visuals for GitHub repos, with opt-in dev mode for scored evaluations.",
+      "version": "0.1.0",
+      "keywords": ["hero-gif", "readme", "visualization", "puppeteer"]
+    }
+  ]
+}
