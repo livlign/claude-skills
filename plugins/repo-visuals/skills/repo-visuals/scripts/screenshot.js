@@ -42,7 +42,14 @@ if (!HTML || !fs.existsSync(HTML)) {
     await new Promise(r => setTimeout(r, 200));
   }
 
-  await page.screenshot({ path: path.resolve(OUT), type: 'png', omitBackground: false });
+  await page.screenshot({
+    path: path.resolve(OUT),
+    type: 'png',
+    omitBackground: false,
+    // Explicit clip so the captured region is always (0,0,W,H) regardless of
+    // body centering, scroll offset, or stray margin. Prevents preview-vs-export drift.
+    clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT },
+  });
   await browser.close();
 
   const bytes = fs.statSync(OUT).size;
