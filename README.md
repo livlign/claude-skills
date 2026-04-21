@@ -13,5 +13,3 @@ A small marketplace of Claude Code plugins I ship.
 | Plugin | Install | What it does |
 |---|---|---|
 | [repo-visuals](./plugins/repo-visuals) | `/plugin install repo-visuals@livlign` | Animated GIF / static PNG hero visuals for GitHub repos, with opt-in dev mode for scored evaluations. |
-
-Status: early, dogfood-in-progress.

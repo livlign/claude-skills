@@ -70,7 +70,3 @@ Any mode can be upgraded mid-run — say *"stop, switch to semi"* and Claude res
 - [`skills/repo-visuals/craft/`](./skills/repo-visuals/craft/) — headline patterns, reference gallery, template HTML.
 - [`skills/repo-visuals/scripts/`](./skills/repo-visuals/scripts/) — `capture.js` (GIF), `screenshot.js` (PNG), `evaluate.js` (code-evaluated scorecard).
 - [`skills/repo-visuals-retro/SKILL.md`](./skills/repo-visuals-retro/SKILL.md) — retrospective meta-skill, on-demand.
-
-## Status
-
-Early, dogfood-in-progress. Phase 6 and the retro skill are still settling.
