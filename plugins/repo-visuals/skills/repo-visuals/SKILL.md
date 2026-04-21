@@ -477,6 +477,14 @@ Read the README first. Ask:
 
 Alt text default: `<repo-name> demo` (user can override).
 
+**Always use a relative path** — `![alt](assets/hero.gif)` or `<img src="assets/hero.gif">`, never `https://raw.githubusercontent.com/<owner>/<repo>/main/assets/hero.gif`. Even if the existing README uses absolute `raw.githubusercontent.com` URLs for its current images, do not mirror that style for your new hero. Reasons:
+
+- Absolute URLs pinned to `main` don't render in forks or in the PR preview — the image stays broken until the PR merges, which hurts review quality and often triggers reviewer objections (has happened: `htmlhint/HTMLHint#1861`).
+- Relative paths resolve correctly on GitHub web, npm package pages, and most README-rendering tools.
+- If the existing logo uses an absolute URL, that's legacy debt — it was shipped before the author realized the tradeoff. Don't propagate it.
+
+If the user explicitly asks for an absolute URL (e.g. embedding the hero on an external site that loads the README), use one — but the default for in-repo embeds is always relative.
+
 ### 5.3 Commit
 
 Branch name default: `docs/add-hero-gif`. Override if the repo has a branch-name convention (check recent PRs or `CONTRIBUTING.md`).
