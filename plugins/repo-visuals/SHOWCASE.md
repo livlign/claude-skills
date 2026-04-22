@@ -11,7 +11,7 @@ To add yours, see [Contribute](#contribute).
 <td width="50%" valign="top">
 
 <table border="1" width="100%"><tr><td align="center">
-<a href="https://github.com/htmlhint/HTMLHint"><img src="https://raw.githubusercontent.com/htmlhint/HTMLHint/main/website/src/assets/img/hero.gif" alt="HTMLHint hero"></a>
+<a href="https://github.com/htmlhint/HTMLHint"><img src="https://raw.githubusercontent.com/htmlhint/HTMLHint/main/website/src/assets/img/hero.gif" alt="HTMLHint hero" width="100%"></a>
 <br>
 <sub><kbd>2026-04-22</kbd> &nbsp; <a href="https://github.com/htmlhint/HTMLHint"><b>htmlhint/HTMLHint</b></a></sub>
 </td></tr></table>
@@ -19,7 +19,7 @@ To add yours, see [Contribute](#contribute).
 <br>
 
 <table border="1" width="100%"><tr><td align="center">
-<a href="https://github.com/emtyty/ast-graph"><img src="https://raw.githubusercontent.com/emtyty/ast-graph/master/docs/ast-graph-demo.gif" alt="ast-graph hero"></a>
+<a href="https://github.com/emtyty/ast-graph"><img src="https://raw.githubusercontent.com/emtyty/ast-graph/master/docs/ast-graph-demo.gif" alt="ast-graph hero" width="100%"></a>
 <br>
 <sub><kbd>2026-04-20</kbd> &nbsp; <a href="https://github.com/emtyty/ast-graph"><b>emtyty/ast-graph</b></a></sub>
 </td></tr></table>
@@ -28,7 +28,7 @@ To add yours, see [Contribute](#contribute).
 <td width="50%" valign="top">
 
 <table border="1" width="100%"><tr><td align="center">
-<a href="https://github.com/affaan-m/everything-claude-code"><img src="https://raw.githubusercontent.com/affaan-m/everything-claude-code/main/assets/hero.png" alt="everything-claude-code hero"></a>
+<a href="https://github.com/affaan-m/everything-claude-code"><img src="https://raw.githubusercontent.com/affaan-m/everything-claude-code/main/assets/hero.png" alt="everything-claude-code hero" width="100%"></a>
 <br>
 <sub><kbd>2026-04-21</kbd> &nbsp; <a href="https://github.com/affaan-m/everything-claude-code"><b>affaan-m/everything-claude-code</b></a></sub>
 </td></tr></table>
@@ -57,7 +57,7 @@ The layout is a 2-column Pinterest-style masonry. Each entry is wrapped in a bor
 
 ```html
 <table border="1" width="100%"><tr><td align="center">
-<a href="<repo URL>"><img src="<raw image URL, or ./showcase/<file> for Option B>" alt="<repo-name> hero"></a>
+<a href="<repo URL>"><img src="<raw image URL, or ./showcase/<file> for Option B>" alt="<repo-name> hero" width="100%"></a>
 <br>
 <sub><kbd>YYYY-MM-DD</kbd> &nbsp; <a href="<repo URL>"><b>owner/repo</b></a></sub>
 </td></tr></table>
