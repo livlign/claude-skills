@@ -63,6 +63,20 @@ For heroes destined for a GitHub README top slot: stage bg should match GitHub's
 
 ---
 
+## 5. Break from ast-graph template DNA — pitch a distinct concept first
+
+When starting a new hero, propose a *visually distinct* concept before writing any HTML. Don't default to the ast-graph template pattern (top brand chip + STEP 01/04 indicator + rotating headline slot above a card stage). Every repo deserves its own structural idea; inheriting chrome from a strong template leads to sameness across projects.
+
+**Why:** On `livlign/claude-skills` in April 2026, the v1/v2 drafts both used the ast-graph scaffolding — header bar with brand chip, ACT 01/03 step indicator, big rotating hero headline above a card-within-card stage. User called it out directly: *"this got a lot of similar wit ast-graph template. Let's redesign a whole new with more creativity."* The v3 redesign used a "wall of heroes + bloom-and-reveal" concept (18-cell grid of visually diverse mini-heroes, one blooms into a centered spotlight) and was accepted on the first look. User followed up with explicit praise: *"I like your creativity in v3, let's keep in mind for next projects."*
+
+**How to apply:**
+- After the scan, **before writing HTML**, pitch 2–3 scenarios as usual (§1.5) — but explicitly call out how each one diverges structurally from the ast-graph reference, not just which feature it foregrounds. If all three proposals share the ast-graph chrome pattern, the proposal phase hasn't done its job.
+- If the first draft falls into the ast-graph chrome by default (brand chip top-left + step indicator top-right + hero headline slot + card stage), proactively offer a clean-slate redesign rather than tweaking inside that scaffold.
+- Creative-direction options worth having in the bank (not exhaustive): wall/gallery/catalog of variations, Russian-doll meta-reveal, kinetic-type declaration, loom/weaving of ribbons, dev-console conversation playback, camera pull-back parallax, polaroid stack, film-strip contact sheet, single-glyph transformation.
+- The ast-graph templates remain valuable as structural references (timeline scheduler, rotating slot mechanics, scene-class pattern) — borrow the *engineering*, not the *composition*.
+
+---
+
 ## How this file is used
 
 The `repo-visuals-retro` skill should read this file at the start of every retro, alongside the run evaluations. Each lesson is a claim about what `SKILL.md` *should* encode. For each lesson, verify the corresponding guidance is still present in the current `SKILL.md` — if it's been weakened or lost, propose re-adding it. New lessons discovered during a retro should be appended here in the same format.
