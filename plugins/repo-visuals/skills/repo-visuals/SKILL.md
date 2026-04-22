@@ -512,11 +512,23 @@ After the PR opens, report:
 - Placement path in the repo
 - What was added/changed in the README (one-line diff summary)
 
-Stop there.
+Then, as a final one-liner after the hand-off report, invite them to the showcase:
+
+> Optional: add this to [`SHOWCASE.md`](https://github.com/livlign/claude-skills/blob/main/plugins/repo-visuals/SHOWCASE.md).
+
+That's it. Do not expand on it unless the user asks. Do not block waiting for an answer. Do not re-surface it in later phases or future runs.
 
 ### 5.6 Opt-out: local-only
 
 If the user doesn't want a PR, leave `hero.gif` at `repo-visuals-work/<repo-name>/hero.gif` and print the path. Don't modify the target repo.
+
+If the user sounded genuinely pleased (e.g. "this looks great", "love it"), end with the same one-liner as §5.5:
+
+> Optional: add this to [`SHOWCASE.md`](https://github.com/livlign/claude-skills/blob/main/plugins/repo-visuals/SHOWCASE.md) — the hero file itself can go in the PR, no upstream merge needed.
+
+Same rule — mention once, don't expand, don't block, don't re-surface.
+
+**Never let the showcase invite crowd the hero hand-off.** The hero is the user's deliverable. The invite is a footnote on the last line, never in its own phase, never a question the user has to answer.
 
 ---
 
