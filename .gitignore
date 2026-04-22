@@ -6,3 +6,6 @@ frames/
 frames.txt
 palette.png
 eval-frames/
+.DS_Store
+evaluations/
+repo-visuals-work/
