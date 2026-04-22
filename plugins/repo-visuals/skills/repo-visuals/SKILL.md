@@ -481,12 +481,21 @@ Read the target repo to infer convention, then ask. Priority order when inferrin
 
 File name: default `hero.gif`. If the repo already has a `hero.gif` or keeps multiple visuals, prefer `<repo-name>-hero.gif` or `<repo-name>-demo.gif`.
 
-**Commit the editable source alongside the binary.** The PNG/GIF by itself is opaque — future maintainers can't diff it, can't update embedded stats without recreating from scratch, and the provenance of the render is lost. Drop these next to the image:
+**Default to minimal — ship only what the repo needs.** The mandatory artifact is the **image file itself** (`hero.png` / `hero.gif`) placed at the inferred path, plus the single-line `![...]` embed in the target README. Nothing else by default.
 
-- `<image-dir>/hero.html` — the self-contained HTML source used to render the image (just copy the scratch `index.html` verbatim). Opens in any browser for preview, no build step.
-- `<image-dir>/README.md` — short doc with: (a) a table of any stats embedded in the image, where each stat is verifiable (URL or source file), and what rule updates it; (b) a ready-to-paste re-render snippet (Puppeteer for static, Puppeteer + ffmpeg for GIF) so the pipeline isn't tribal knowledge.
+Do **not** preemptively commit `hero.html`, a `docs/images/README.md` maintenance doc, capture scripts, frames, palettes, or any supporting artifact. They enlarge the PR, dilute the diff, and in many repos are noise the maintainer will ask you to remove.
 
-Real incident: a review bot flagged an image-only PR with "whoever updates the stats has to recreate from scratch with no version-controlled baseline." Committing `hero.html` + a maintenance README turned a 2-item review into a merged PR (`SonarSource/sonarqube#3427`).
+Include supporting files **only when** one of these applies:
+
+- **The reviewer explicitly asks for them.** Common shape: a bot review flags "no design source — future maintainers can't update stats." Add the requested file as a follow-up commit on the same PR. (Real incident: `SonarSource/sonarqube#3427` — `hero.html` + maintenance README was requested by the review bot and directly turned a 2-item review into a merged PR.)
+- **The target repo has precedent.** If the existing `assets/` / `docs/images/` / `website/src/assets/img/` already contains design sources (SVGs, Figma exports, prior `hero.html`), match that convention on the way in.
+- **The user explicitly asks to ship source alongside.** Some users want the source in their own repos so they can re-render later; honor it when stated.
+
+If none of those apply, keep the PR to the image + one README line. Real incident: `htmlhint/HTMLHint#1863` shipped with `hero.html` + a maintenance `README.md` bundled in — the maintainer's feedback was literally *"GIF looks good — if you could kindly remove the HTML and MD I'll get it merged"*. Anything beyond the image risks being a scope imposition on someone else's repo.
+
+When you *do* need to commit source (one of the three triggers above):
+- `<image-dir>/hero.html` — the self-contained HTML source (just copy the scratch `index.html` verbatim).
+- `<image-dir>/README.md` — short doc with: (a) table of embedded stats + where each is verifiable, (b) re-render snippet (Puppeteer for static, Puppeteer + ffmpeg for GIF).
 
 ### 5.2 README embed
 
