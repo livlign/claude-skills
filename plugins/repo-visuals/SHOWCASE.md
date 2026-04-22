@@ -10,19 +10,28 @@ To add yours, see [Contribute](#contribute).
 <tr>
 <td width="50%" valign="top">
 
+<table border="1" width="100%"><tr><td align="center">
 <a href="https://github.com/htmlhint/HTMLHint"><img src="https://raw.githubusercontent.com/htmlhint/HTMLHint/main/website/src/assets/img/hero.gif" alt="HTMLHint hero"></a>
+<br>
 <sub><kbd>2026-04-22</kbd> &nbsp; <a href="https://github.com/htmlhint/HTMLHint"><b>htmlhint/HTMLHint</b></a></sub>
+</td></tr></table>
 
-<br><br>
+<br>
 
+<table border="1" width="100%"><tr><td align="center">
 <a href="https://github.com/emtyty/ast-graph"><img src="https://raw.githubusercontent.com/emtyty/ast-graph/master/docs/ast-graph-demo.gif" alt="ast-graph hero"></a>
+<br>
 <sub><kbd>2026-04-20</kbd> &nbsp; <a href="https://github.com/emtyty/ast-graph"><b>emtyty/ast-graph</b></a></sub>
+</td></tr></table>
 
 </td>
 <td width="50%" valign="top">
 
+<table border="1" width="100%"><tr><td align="center">
 <a href="https://github.com/affaan-m/everything-claude-code"><img src="https://raw.githubusercontent.com/affaan-m/everything-claude-code/main/assets/hero.png" alt="everything-claude-code hero"></a>
+<br>
 <sub><kbd>2026-04-21</kbd> &nbsp; <a href="https://github.com/affaan-m/everything-claude-code"><b>affaan-m/everything-claude-code</b></a></sub>
+</td></tr></table>
 
 </td>
 </tr>
@@ -44,13 +53,16 @@ Drop the file into [`showcase/`](./showcase/) in your PR to this repo and refere
 
 ### Entry template
 
-The layout is a 2-column Pinterest-style masonry. To add an entry, append it to whichever `<td>` column is currently shorter (keeps the wall tessellated). Paste this block inside that column:
+The layout is a 2-column Pinterest-style masonry. Each entry is wrapped in a bordered single-cell table so it reads as a card. To add an entry, append the card block below to whichever outer `<td>` column is currently shorter (keeps the wall tessellated):
 
 ```html
+<table border="1" width="100%"><tr><td align="center">
 <a href="<repo URL>"><img src="<raw image URL, or ./showcase/<file> for Option B>" alt="<repo-name> hero"></a>
+<br>
 <sub><kbd>YYYY-MM-DD</kbd> &nbsp; <a href="<repo URL>"><b>owner/repo</b></a></sub>
+</td></tr></table>
 
-<br><br>
+<br>
 ```
 
 Only the **hero image**, **repo link**, and **date** are required.
