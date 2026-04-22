@@ -8,7 +8,7 @@ To add yours, see [Contribute](#contribute).
 
 ## ast-graph
 
-[![ast-graph hero](https://raw.githubusercontent.com/emtyty/ast-graph/main/docs/ast-graph-demo.gif)](https://github.com/emtyty/ast-graph)
+[![ast-graph hero](https://raw.githubusercontent.com/emtyty/ast-graph/master/docs/ast-graph-demo.gif)](https://github.com/emtyty/ast-graph)
 
 - **For:** [emtyty/ast-graph](https://github.com/emtyty/ast-graph)
 - **Format:** animated GIF
