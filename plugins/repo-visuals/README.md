@@ -1,6 +1,6 @@
 # repo-visuals
 
-![repo-visuals demo](./assets/hero.gif)
+![repo-visuals — a Claude Code plugin that turns any repo into a bespoke hero visual. Scans, proposes scenarios, renders animated GIF or static PNG. 5 phases, 3 operating modes, 3 output formats.](./assets/hero.gif)
 
 A Claude Code plugin for producing hero visuals — **animated GIF** or **static PNG** — for GitHub repositories.
 
