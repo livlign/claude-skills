@@ -6,6 +6,8 @@ A Claude Code plugin for producing hero visuals — **animated GIF** or **static
 
 The plugin scans the target repo, recommends a format based on the repo's identity, generates bespoke HTML via a structured discovery dialog, previews it in the browser, and exports to an optimized GIF or retina PNG.
 
+See [`SHOWCASE.md`](./SHOWCASE.md) for heroes that landed in their target repo.
+
 ## Install
 
 ```
@@ -70,3 +72,4 @@ Any mode can be upgraded mid-run — say *"stop, switch to semi"* and Claude res
 - [`skills/repo-visuals/craft/`](./skills/repo-visuals/craft/) — headline patterns, reference gallery, template HTML.
 - [`skills/repo-visuals/scripts/`](./skills/repo-visuals/scripts/) — `capture.js` (GIF), `screenshot.js` (PNG), `evaluate.js` (code-evaluated scorecard).
 - [`skills/repo-visuals-retro/SKILL.md`](./skills/repo-visuals-retro/SKILL.md) — retrospective meta-skill, on-demand.
+- [`SHOWCASE.md`](./SHOWCASE.md) — merged hero visuals produced with this skill; open a PR to add yours.
