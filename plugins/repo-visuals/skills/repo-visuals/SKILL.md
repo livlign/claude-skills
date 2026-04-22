@@ -467,6 +467,13 @@ Read the target repo to infer convention, then ask. Priority order when inferrin
 
 File name: default `hero.gif`. If the repo already has a `hero.gif` or keeps multiple visuals, prefer `<repo-name>-hero.gif` or `<repo-name>-demo.gif`.
 
+**Commit the editable source alongside the binary.** The PNG/GIF by itself is opaque — future maintainers can't diff it, can't update embedded stats without recreating from scratch, and the provenance of the render is lost. Drop these next to the image:
+
+- `<image-dir>/hero.html` — the self-contained HTML source used to render the image (just copy the scratch `index.html` verbatim). Opens in any browser for preview, no build step.
+- `<image-dir>/README.md` — short doc with: (a) a table of any stats embedded in the image, where each stat is verifiable (URL or source file), and what rule updates it; (b) a ready-to-paste re-render snippet (Puppeteer for static, Puppeteer + ffmpeg for GIF) so the pipeline isn't tribal knowledge.
+
+Real incident: a review bot flagged an image-only PR with "whoever updates the stats has to recreate from scratch with no version-controlled baseline." Committing `hero.html` + a maintenance README turned a 2-item review into a merged PR (`SonarSource/sonarqube#3427`).
+
 ### 5.2 README embed
 
 Read the README first. Ask:
@@ -475,7 +482,15 @@ Read the README first. Ask:
 - **Replace an existing image** → identify it, confirm with user.
 - **Specific section** → user names where.
 
-Alt text default: `<repo-name> demo` (user can override).
+**Alt text is informational, not decorative.** If the image contains text, stats, or a named concept that a sighted viewer takes away, the alt text must convey the same. `<repo-name> demo` is almost never enough.
+
+Pattern:
+- `![<project> — <one-line positioning>. <key stat 1>, <key stat 2>, <key stat 3>.](<path>)`
+- e.g. `![SonarQube — the standard for Clean Code. 30+ languages, 5,000+ analysis rules, 400K+ projects, 18 years of continuous inspection.](docs/images/hero.png)`
+
+If the image is genuinely decorative (a brand flourish, a pattern), use `alt=""` explicitly so assistive technology skips it rather than announcing the filename.
+
+Real incident: a review bot flagged `![SonarQube — the standard for Clean Code](…)` with "omits the stats visually presented in the image — screen-reader users will never see them." Fix was a one-line alt-text rewrite; flagging it up front avoids the round trip (`SonarSource/sonarqube#3427`).
 
 **Always use a relative path** — `![alt](assets/hero.gif)` or `<img src="assets/hero.gif">`, never `https://raw.githubusercontent.com/<owner>/<repo>/main/assets/hero.gif`. Even if the existing README uses absolute `raw.githubusercontent.com` URLs for its current images, do not mirror that style for your new hero. Reasons:
 
