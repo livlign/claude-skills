@@ -6,7 +6,7 @@
       "name": "repo-visuals",
       "source": "./plugins/repo-visuals",
       "description": "Animated GIFs or static PNG hero visuals for GitHub repos, with opt-in dev mode for scored evaluations.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "keywords": ["hero-gif", "readme", "visualization", "puppeteer"]
     }
   ]
