@@ -170,6 +170,7 @@ Move to the build phase when all six are settled:
 - [ ] Dimensions confirmed (see §1.7 — default 1200×675; tailor when the repo spirit calls for it)
 - [ ] Real inventory count captured from §1.3 scan (if the repo has a countable collection)
 - [ ] Operating mode recorded from §1.1a (Auto / Semi-auto / Manual)
+- [ ] Paddings are symmetric — top = bottom, left = right — unless a deliberate asymmetry is named in the brief (§2.4 symmetry rule)
 
 Write the brief back to the user in a compact block. Wait for **"go"** before writing any HTML — *unless* the mode is **Auto**, in which case proceed directly to Phase 2 with a brief summary line and no wait. In **Semi-auto**, show the brief but proceed after a brief pause unless the user interjects. In **Manual**, wait explicitly for "go".
 
@@ -259,6 +260,13 @@ Single self-contained file. No build step. Sections:
   - **Capture at 2× always.** PNG: `setViewport({ ..., deviceScaleFactor: 2 })` — Puppeteer's `page.screenshot()` respects it. GIF: `deviceScaleFactor` is silently ignored by Chromium's screencast API — see §4.3g for the mandatory workaround (viewport at 2× dimensions + `document.body.style.zoom = 2` + preview-media-query override).
   - **Source font-size floor on a 1200-wide canvas: ~15.5 px for body text, ~12.5 px for small metadata (rule-chips, locations).** After GitHub's column downscale, those land at ~13 CSS px and ~10 CSS px — the lower bound where text stays readable. Drop below ~13 px source and rendered legibility craters. Headlines / wordmarks scale proportionally up from there (the HTMLHint v3c refresh used 42 px wordmark / 15.5 px body and that is the lower bound, not the target).
   - **Own benchmark: "like a MacBook retina screenshot."** Put the exported hero next to any other UI chrome on the README (badges, code blocks, surrounding text). If the hero looks softer or stretchier, it's wrong — do not ship. Re-capture at 2× and/or raise source font sizes until the hero is visibly parity with the rest of the page. Real incident: `htmlhint/HTMLHint#1861` shipped a 1× 1200×200 marquee at 11.5 px body text; visual "looks small / fuzzy" feedback required a full retina re-render.
+- **Symmetry is load-bearing — check paddings, margins, and anchors deliberately.** Before ship, verify top-padding = bottom-padding and left-margin = right-margin. When shrinking a right-anchored element (e.g., `shot-wrap` with `right: 24px`), preserve its **left-edge position**, not its right margin — otherwise the left whitespace gap grows as the element narrows, creating an orphan composition. Real incident (Terminal.Gui hero, April 2026): initial layout had `top: 56px` on the title block and `bottom: 26px` on the footer — user called it out; later the demo shrank from 788×528 to 686×460 while `right: 24` stayed fixed, so the left gap grew from 44 → 146 px. Fix combined (a) equalize top/bottom padding, (b) equalize left/right margins by trimming the stage width, (c) preserve the demo's left-edge position when resizing.
+- **On-screen labels must read cold — no cryptic abbreviations.** If a first-time viewer can't explain a label in two seconds, rewrite. Real incident: a `'17 / Since` stat was meant to say "released in 2017" — user asked what it meant; fix was `Since 2017` or drop the stat. Apply this check during §3.2 preview review.
+- **Embedding a user- or reviewer-provided asset inside the hero has its own rulebook.** When a demo GIF, MOV, screenshot, or logo must appear *inside* the outer hero frame (not as chrome around it):
+  - **Loop alignment.** The inner asset's loop length must equal the outer loop, or be a clean divisor of it. If the source is mismatched (e.g. a 37.7 s demo inside a 20 s outer loop), re-encode with `ffmpeg -filter_complex "setpts=<ratio>*PTS"` to speed-trim *before* embedding. A seamless inner = seamless outer.
+  - **Native-source resolution.** Keep the inner at its native source dimensions — don't pre-downscale. The browser needs the most pixels it can get to sample from during the outer retina capture; pre-downscaling compounds with the outer's own downscale and visibly blurs the final.
+  - **Palette budget.** A colorful inner + colorful outer chrome will blow the 256-color GIF palette. Keep the outer chrome monochrome or low-chroma so the inner's colors pop; don't compete with the inner for palette slots.
+  - **Reviewer assets are sacred.** If a reviewer or upstream contributor supplied the asset, do not silently replace it with a self-generated recording — that re-opens their review. If a replacement genuinely is better, flag the scope change explicitly and ask before swapping.
 
 ### 2.5 When to stop writing and preview
 
@@ -330,6 +338,8 @@ The user may not fully know what they want. Keep watching for mismatches between
 
 When you spot a mismatch, flag it proactively ("the README leans 'fast' but the current pacing is slower — intentional, or should we tighten?"). Deliver intent, not just instructions.
 
+**"Reduce" means reduce — directional verbs are load-bearing.** When the user pairs a directional verb (*reduce*, *smaller*, *tighten*, *cut*, *shrink*, *trim*) with a relational clause (*"so that padding A equals padding B"*, *"to match X"*), treat the directional verb as the binding constraint. If the easy execution of the relational clause would violate the direction — e.g., equalizing padding by growing the demo — stop and restate rather than execute. Real incident: user said *"reduce the height so the padding Cross-platform to top equal MIT to bottom"* — I executed as "equalize padding" and grew the demo from 749×502 to 788×528; user had to correct *"I meant reduce the size, not increase it to bigger."* The literal word was clear; the misread cost a capture-and-encode round trip.
+
 ---
 
 ## Phase 4 — Export
@@ -382,19 +392,30 @@ Use as-is unless there's a specific reason to deviate.
 
 **Capture (2× retina — mandatory for anything with text):**
 
-Chromium's `Page.startScreencast` **silently ignores `deviceScaleFactor`**, so the static PNG trick (`deviceScaleFactor: 2`) does not work for GIF. Workaround: enlarge the viewport to 2× the target dimensions and apply `zoom: 2` to the body so the stage renders at 2× density natively. The screencast then emits `2W × 2H` frames and the resulting GIF embeds at native `1200 × H` CSS size on retina displays — sharp.
+**Preferred path (current Chromium honors `deviceScaleFactor` during screencast):**
 
 - Launch Puppeteer (`headless: true` — `'new'` is deprecated).
-- `setViewport({ width: W * 2, height: H * 2, deviceScaleFactor: 1 })` — 2× viewport, DSF left at 1.
+- `setViewport({ width: W, height: H, deviceScaleFactor: 2 })`. Screencast frames emit at `2W × 2H`.
 - `page.goto(file://...)` with `waitUntil: 'networkidle0'`.
-- **Override the preview-only media query** so the stage stays flush at `(0, 0)` in the 2× viewport (the `@media (min-width: 1300px)` block from §2.3a will otherwise pad and center the body, clipping the stage):
+- `await page.evaluateHandle('document.fonts.ready')`.
+- Small real-time settle (300–400 ms).
+- `await page.evaluate(() => window.runLoop())` to reset animation to t=0.
+- Subscribe to `Page.screencastFrame`, save each frame as PNG. Verify the first saved frame is `2W × 2H` — if it's `W × H`, `deviceScaleFactor` is being ignored and you need the fallback below.
+- `client.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 })`.
+
+This is what `scripts/capture.js --scale 2` (default) now does.
+
+**Fallback (if a future Chromium/Puppeteer silently ignores `deviceScaleFactor` in screencast):** enlarge the viewport to 2× the target dimensions and apply `zoom: 2` to the body so the stage renders at 2× density natively. Use this only if the preferred path produces 1× frames:
+
+- `setViewport({ width: W * 2, height: H * 2, deviceScaleFactor: 1 })`.
+- Override the preview-only media query so the stage stays flush at `(0, 0)`:
   ```js
   await page.addStyleTag({ content: `
     html, body { margin: 0 !important; padding: 0 !important; }
     body { display: block !important; align-items: flex-start !important; justify-content: flex-start !important; }
   `});
   ```
-- `await page.evaluate(() => { document.body.style.zoom = '2'; })` — scales the stage to fill the 2× viewport.
+- `await page.evaluate(() => { document.body.style.zoom = '2'; })`.
 - `await page.evaluateHandle('document.fonts.ready')`.
 - Small real-time settle (300–400 ms, slightly longer than 1× captures because zoom + font reflow take a moment).
 - `await page.evaluate(() => window.runLoop())` to reset the animation to t=0.
@@ -409,20 +430,21 @@ Chromium's `Page.startScreencast` **silently ignores `deviceScaleFactor`**, so t
 **Encode (two-pass palette):**
 
 ```bash
-# Pass 1: palette tuned for motion
+# Pass 1: palette built from 2× frames, lanczos-downscaled to target size
 ffmpeg -y -f concat -safe 0 -i frames.txt \
-  -vf "fps=30,palettegen=stats_mode=diff:max_colors=256" \
+  -vf "fps=24,scale=<W>:<H>:flags=lanczos+accurate_rnd+full_chroma_int,palettegen=stats_mode=full:max_colors=256" \
   palette.png
 
-# Pass 2: apply palette with sharp-text dither
+# Pass 2: apply palette with sharp-text dither, same lanczos downscale
 ffmpeg -y -f concat -safe 0 -i frames.txt -i palette.png \
-  -lavfi "fps=30 [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
+  -lavfi "fps=24,scale=<W>:<H>:flags=lanczos+accurate_rnd+full_chroma_int [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
   -loop 0 hero.gif
 ```
 
-- `stats_mode=diff` — palette focuses on moving regions; static UI chrome doesn't dominate.
-- `bayer:bayer_scale=5` — sharper than `sierra2_4a` for UI text. Try `dither=none` if text is still blurry and gradients are minimal.
-- Do **not** re-scale in the filter graph if frames are already the target size.
+- **`scale=<W>:<H>:flags=lanczos+accurate_rnd+full_chroma_int` in *both* passes.** Frames from `capture.js --scale 2` are `2W × 2H`; this downscales them to the target dimensions cleanly. Omitting the downscale ships a final GIF at doubled dimensions (acceptable on retina but bloats file size ~4×).
+- **`stats_mode=full`** — analyzes every pixel, giving chrome text equal weight to motion regions. Use `stats_mode=diff` only if the hero is mostly-static with a small moving region and text sharpness isn't a concern.
+- **`bayer:bayer_scale=3`** — sharper than `bayer_scale=5`; try `dither=none` if text is still blurry and gradients are minimal (~30% file-size cost).
+- **`fps=24` is a good default** (20s × 24 = 480 frames). `fps=30` looks buttery but bloats file size; drop to `fps=20` or `fps=18` if over the 10 MB target.
 
 **Size budget:**
 
