@@ -1,6 +1,11 @@
 // Animated capture via Puppeteer Page.startScreencast.
-// Usage: node scripts/capture.js --html <path> --out <frames-dir> --manifest <frames.txt> --duration <ms> --width 1200 --height 675
+// Usage: node scripts/capture.js --html <path> --out <frames-dir> --manifest <frames.txt> --duration <ms> --width 1200 --height 675 [--scale 2]
 // Writes numbered PNGs to <frames-dir> and an ffmpeg concat manifest to <frames.txt>.
+//
+// --scale defaults to 2 (retina). Current Chromium honors deviceScaleFactor during
+// screencast, so frames emit at (width*scale × height*scale). The ffmpeg encode
+// should lanczos-downscale to the target (width × height). See SKILL.md §4.3g for
+// the zoom:2 viewport-doubling fallback if a future Chromium regresses dSF support.
 
 const puppeteer = require('puppeteer');
 const path = require('path');
@@ -20,6 +25,7 @@ const MANIFEST = path.resolve(flag('manifest', path.resolve(__dirname, 'frames.t
 const DURATION_MS = Number(flag('duration', 20700));
 const WIDTH = Number(flag('width', 1200));
 const HEIGHT = Number(flag('height', 675));
+const SCALE = Number(flag('scale', 2));
 
 (async () => {
   if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true });
@@ -30,7 +36,7 @@ const HEIGHT = Number(flag('height', 675));
     args: ['--no-sandbox', '--hide-scrollbars']
   });
   const page = await browser.newPage();
-  await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: 1 });
+  await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: SCALE });
 
   await page.goto('file:///' + HTML.replace(/\\/g, '/'), { waitUntil: 'networkidle0' });
   await page.evaluateHandle('document.fonts.ready');
@@ -83,5 +89,5 @@ const HEIGHT = Number(flag('height', 675));
   // concat demuxer quirk: repeat last file with no duration
   if (frames.length) lines.push(`file '${OUT.replace(/\\/g, '/')}/${frames[frames.length - 1].name}'`);
   fs.writeFileSync(MANIFEST, lines.join('\n'));
-  console.log(`Captured ${frames.length} frames across ${DURATION_MS}ms.`);
+  console.log(`Captured ${frames.length} frames across ${DURATION_MS}ms at ${SCALE}x (${WIDTH * SCALE}×${HEIGHT * SCALE}).`);
 })();

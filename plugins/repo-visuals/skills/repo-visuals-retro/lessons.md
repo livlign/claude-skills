@@ -77,6 +77,60 @@ When starting a new hero, propose a *visually distinct* concept before writing a
 
 ---
 
+## 6. Retina capture (deviceScaleFactor: 2) is the default, not an opt-in
+
+Puppeteer screencast at `deviceScaleFactor: 1` produces noticeably softer GIFs than the HTML preview, especially on small type and fine UI details in embedded assets. Capturing at `deviceScaleFactor: 2` (rendering the page at doubled internal resolution) and then lanczos-downscaling to the final size in ffmpeg gives dramatically sharper output.
+
+**Why:** On `gui-cs/Terminal.Gui` in April 2026, the user explicitly flagged this: *"the gif we export before is much blurrier than the html. Can we not make that mistake this time?"* Switching from 1× to 2× capture with `scale=W:H:flags=lanczos+accurate_rnd+full_chroma_int` during the two-pass palette encode produced a materially sharper hero in one pass — a bigger win than any amount of dither/palette tuning.
+
+**How to apply:**
+- `scripts/capture.js` currently hardcodes `deviceScaleFactor: 1`. Treat this as a structural bug: at minimum accept a `--scale` CLI flag; better, default to `2` with an opt-out for size-sensitive runs.
+- In the ffmpeg two-pass encode, add `scale=W:H:flags=lanczos+accurate_rnd+full_chroma_int` to *both* `palettegen` and `paletteuse` passes. The extra scaling flags are effectively free but noticeably cleaner.
+- Fiddling with `bayer_scale`, `dither=none`, and `stats_mode=full` vs `diff` matters far less than capturing at 2× to begin with. Only reach for those after retina is on.
+- Expect the frame PNGs to be ~4× larger on disk (2× width × 2× height). This is fine — they are temporary artifacts, deleted after encode.
+
+---
+
+## 7. Embedding a user-provided asset inside the hero has its own rulebook
+
+When a reviewer, user, or upstream repo provides a GIF/MOV/screenshot that must appear *inside* the outer hero (as a demo frame, screenshot card, etc.), the composition has constraints that chrome-only heroes don't.
+
+**Why:** On `gui-cs/Terminal.Gui` in April 2026, a PR reviewer asked for a specific animated demo to be embedded in the hero. Several things went wrong before getting right: the inner GIF was 37.7s (out-of-range for a 15–25s outer loop), the inner was pre-downscaled to 860w which compounded blur after the outer's own downscale, and the outer's colorful chrome fought the inner's vivid ANSI palette for the 256-color budget.
+
+**How to apply:**
+- **Loop alignment:** the inner asset's loop length should be equal to, or a clean divisor of, the outer loop. For a mismatched source, use `ffmpeg -filter_complex "setpts=<ratio>*PTS"` to speed-trim (e.g., 37.7 s → 20 s at `setpts=0.5305*PTS`) and regenerate the palette. A seamless inner-loop = seamless outer-loop.
+- **Resolution:** keep the inner at **native source resolution** (not pre-downscaled). The browser has more pixels to sample from during the outer capture, which compounds positively with retina capture.
+- **Palette budget:** a colorful inner + colorful outer chrome will blow the 256-color GIF palette. The fix is to keep the outer chrome monochrome or low-chroma so the inner's colors "pop" and the palette stays honest. We confirmed this on Terminal.Gui: switching the outer from cyan/purple/yellow accents to black/white/gray let the AttributePicker's ANSI red/blue/yellow render cleanly.
+- **Reviewer assets are sacred.** If a reviewer supplied the asset, do not silently replace it with a self-generated recording — that re-opens their review. If a replacement is a better match, flag the scope change explicitly and ask.
+
+---
+
+## 8. Symmetry is load-bearing — check paddings, margins, and anchors deliberately
+
+Before shipping, verify that top-padding equals bottom-padding and left-margin equals right-margin. When shrinking a right-anchored element (e.g., `shot-wrap` with `right: 24px`), preserve its **left-edge position**, not its right margin — otherwise the left whitespace gap grows as the element narrows, creating an orphaned composition.
+
+**Why:** On `gui-cs/Terminal.Gui` in April 2026, the initial layout had `top: 56px` on the title block and `bottom: 26px` on the footer — asymmetric. User called it out: *"reduce the height so the padding Cross-platform to top equal MIT to bottom."* Later, when the demo was shrunk from 788×528 to 686×460 while `right: 24` stayed fixed, the demo's left edge receded from 388 to 490, leaving ~146px of dead whitespace on its left. User: *"the gif now is farther to the left than before."* Final resolution combined: (a) equalize top/bottom padding (both 40px), (b) equalize left/right margins by trimming the stage width, (c) preserve the demo's left-edge position. Other related symptoms observed: stat labels like `'17 / Since` that read cryptic cold — if a label isn't obvious to a first-time viewer, rewrite (`Since 2017`).
+
+**How to apply:**
+- Add a §1.6 convergence-checklist item: **paddings are symmetric (top = bottom, left = right) unless a deliberate asymmetry is called out in the brief.**
+- When resizing a right-anchored element, decide upfront whether you're preserving the left edge (anchor there with `left: <x>px`) or the right margin (keep `right: <x>px`). The wrong choice creates orphan whitespace.
+- Cold-read every on-screen label before ship. If a cold reader can't explain what `'17 / Since` means in 2 seconds, it's failed the legibility bar — rewrite as `Since 2017` or remove.
+
+---
+
+## 9. "Reduce" means reduce
+
+When the user says *reduce the size*, they mean make it smaller. If I'm rebalancing, equalizing, or symmetrizing in a way that happens to *grow* a dimension — that's a misread. Restate and re-confirm rather than execute.
+
+**Why:** On `gui-cs/Terminal.Gui` in April 2026, user asked *"reduce the height so the padding Cross-platform to top equal MIT to bottom"* — intent was reduce. I interpreted as equalize-padding-while-preserving-content, which bumped the demo from 749×502 to 788×528 (bigger). User corrected: *"no i mean reduce the size of the hero, not increase it to bigger."* The literal word was clear; the misread cost a capture-and-encode round trip.
+
+**How to apply:**
+- Any time a directional verb ("reduce", "smaller", "tighten", "cut") combines with a relational clause ("so that …"), treat the directional verb as load-bearing. If the easy execution of the relational clause would violate the direction, stop and restate.
+- In terms of CSS: `width: 788px → 686px` is a reduction; `width: 749px → 788px` is not, regardless of what padding or symmetry argument motivates it. Visibly-bigger is visibly-bigger.
+- This is a specific instance of the broader "deliver intent, not just instructions" principle in `SKILL.md §3.6`.
+
+---
+
 ## How this file is used
 
 The `repo-visuals-retro` skill should read this file at the start of every retro, alongside the run evaluations. Each lesson is a claim about what `SKILL.md` *should* encode. For each lesson, verify the corresponding guidance is still present in the current `SKILL.md` — if it's been weakened or lost, propose re-adding it. New lessons discovered during a retro should be appended here in the same format.

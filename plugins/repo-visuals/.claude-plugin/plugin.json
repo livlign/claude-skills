@@ -1,6 +1,6 @@
 {
   "name": "repo-visuals",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Animated GIFs or static PNG hero visuals for GitHub repos.",
   "author": { "name": "livlign" },
   "homepage": "https://github.com/livlign/claude-skills",
