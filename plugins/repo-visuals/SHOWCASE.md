@@ -24,6 +24,11 @@ To add yours, see [Contribute](#contribute).
 <a href="https://github.com/affaan-m/everything-claude-code"><img src="https://raw.githubusercontent.com/affaan-m/everything-claude-code/main/assets/hero.png" alt="everything-claude-code hero"></a>
 <sub><kbd>2026-04-21</kbd> &nbsp; <a href="https://github.com/affaan-m/everything-claude-code"><b>affaan-m/everything-claude-code</b></a></sub>
 
+<br><br>
+
+<a href="https://github.com/gui-cs/Terminal.Gui"><img src="https://raw.githubusercontent.com/gui-cs/Terminal.Gui/develop/docfx/images/hero.gif" alt="Terminal.Gui hero"></a>
+<sub><kbd>2026-04-25</kbd> &nbsp; <a href="https://github.com/gui-cs/Terminal.Gui"><b>gui-cs/Terminal.Gui</b></a> &nbsp; <em><a href="https://github.com/gui-cs/Terminal.Gui/pull/5058">#5058</a></em></sub>
+
 </td>
 </tr>
 </table>
