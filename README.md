@@ -4,6 +4,8 @@
 
 Claude Code plugins for working with GitHub repos — designing README heroes, auditing READMEs.
 
+Featured in [**rohitg00/awesome-claude-code-toolkit**](https://github.com/rohitg00/awesome-claude-code-toolkit) — the curated list of Claude Code plugins, agents, and MCP servers.
+
 ```
 /plugin marketplace add livlign/claude-skills
 ```
@@ -12,35 +14,37 @@ Claude Code plugins for working with GitHub repos — designing README heroes, a
 
 ### Recent heroes shipped
 
+Thumbnails — click through to see the live hero in each repo.
+
 <table>
 <tr>
 <td width="50%" valign="top">
   <sub><a href="https://github.com/htmlhint/HTMLHint"><b>htmlhint/HTMLHint</b></a></sub>
-  <a href="https://github.com/htmlhint/HTMLHint"><img src="https://raw.githubusercontent.com/htmlhint/HTMLHint/main/website/src/assets/img/hero.gif?v=retina" alt="HTMLHint hero"></a>
+  <a href="https://github.com/htmlhint/HTMLHint"><img src="./assets/showcase/htmlhint.png" alt="HTMLHint hero"></a>
 </td>
 <td width="50%" valign="top">
   <sub><a href="https://github.com/gui-cs/Terminal.Gui"><b>gui-cs/Terminal.Gui</b></a></sub>
-  <a href="https://github.com/gui-cs/Terminal.Gui"><img src="https://raw.githubusercontent.com/gui-cs/Terminal.Gui/develop/docfx/images/hero.gif" alt="Terminal.Gui hero"></a>
+  <a href="https://github.com/gui-cs/Terminal.Gui"><img src="./assets/showcase/terminal-gui.png" alt="Terminal.Gui hero"></a>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
   <sub><a href="https://github.com/kunwar-shah/claudex"><b>kunwar-shah/claudex</b></a></sub>
-  <a href="https://github.com/kunwar-shah/claudex"><img src="https://raw.githubusercontent.com/kunwar-shah/claudex/main/screenshots/hero.gif" alt="claudex hero"></a>
+  <a href="https://github.com/kunwar-shah/claudex"><img src="./assets/showcase/claudex.png" alt="claudex hero"></a>
 </td>
 <td width="50%" valign="top">
   <sub><a href="https://github.com/rullerzhou-afk/clawd-on-desk"><b>rullerzhou-afk/clawd-on-desk</b></a></sub>
-  <a href="https://github.com/rullerzhou-afk/clawd-on-desk"><img src="https://raw.githubusercontent.com/rullerzhou-afk/clawd-on-desk/main/assets/hero.gif" alt="clawd-on-desk hero"></a>
+  <a href="https://github.com/rullerzhou-afk/clawd-on-desk"><img src="./assets/showcase/clawd-on-desk.png" alt="clawd-on-desk hero"></a>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
   <sub><a href="https://github.com/affaan-m/everything-claude-code"><b>affaan-m/everything-claude-code</b></a></sub>
-  <a href="https://github.com/affaan-m/everything-claude-code"><img src="https://raw.githubusercontent.com/affaan-m/everything-claude-code/main/assets/hero.png" alt="everything-claude-code hero"></a>
+  <a href="https://github.com/affaan-m/everything-claude-code"><img src="./assets/showcase/everything-claude-code.png" alt="everything-claude-code hero"></a>
 </td>
 <td width="50%" valign="top">
   <sub><a href="https://github.com/emtyty/ast-graph"><b>emtyty/ast-graph</b></a></sub>
-  <a href="https://github.com/emtyty/ast-graph"><img src="https://raw.githubusercontent.com/emtyty/ast-graph/master/docs/ast-graph-demo.gif" alt="ast-graph hero"></a>
+  <a href="https://github.com/emtyty/ast-graph"><img src="./assets/showcase/ast-graph.png" alt="ast-graph hero"></a>
 </td>
 </tr>
 </table>
