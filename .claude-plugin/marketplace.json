@@ -15,6 +15,13 @@
       "description": "Audits a GitHub repo's README against best-practice patterns and produces a prioritized punch list (P0/P1/P2) of fixes — hero presence, install-to-first-success length, audience-jargon match, drift signals. Read-only diagnostic by default.",
       "version": "0.1.0",
       "keywords": ["readme", "readme-review", "readme-audit", "documentation", "github", "open-source", "maintainer-tools"]
+    },
+    {
+      "name": "dotnet-coverage-kit",
+      "source": "./plugins/dotnet-coverage-kit",
+      "description": "Characterization-test backfill and spec-test enforcement for .NET services. Deterministic C0/C1 coverage via dotnet-coverage, with a checked-in manifest explaining every inclusion and exclusion.",
+      "version": "0.1.0",
+      "keywords": ["dotnet", "testing", "coverage", "characterization", "xunit"]
     }
   ]
 }

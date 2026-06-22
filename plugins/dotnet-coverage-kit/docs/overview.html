@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dotnet-coverage-kit — workflow</title>
+<style>
+  :root{
+    --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f6f7f9; --card:#fff;
+    --ac:#4f46e5; --ac-soft:#eef0fe; --ac-line:#c7c9f5;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --shadow:0 1px 2px #1f29370a,0 6px 18px #1f29370f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:46px 24px 70px}
+  header{margin-bottom:30px}
+  .kick{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ac)}
+  h1{font-size:27px;font-weight:680;letter-spacing:-.02em;margin:9px 0 6px}
+  .lede{color:var(--muted);font-size:15px;margin:0;max-width:70ch}
+
+  .flow{display:flex;flex-direction:column;align-items:stretch}
+  .step{position:relative;width:100%;text-align:left;cursor:pointer;background:var(--card);border:1px solid var(--line);
+        border-radius:14px;padding:18px 20px;color:var(--ink);font-family:inherit;box-shadow:var(--shadow);
+        transition:transform .15s ease,box-shadow .15s ease,border-color .15s}
+  .step:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--ac) 55%,var(--line));
+        box-shadow:0 2px 4px #1c22300f,0 14px 30px #1c223016}
+  .shead{display:flex;align-items:center;gap:12px}
+  .stepno{display:inline-flex;align-items:center;gap:8px;font-size:10.5px;font-weight:700;letter-spacing:.1em;
+          text-transform:uppercase;color:#9aa1ae;flex:none}
+  .stepno::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ac)}
+  .shead h2{font-size:18px;font-weight:680;letter-spacing:-.01em;margin:0;flex:1}
+  .cmd{font-family:var(--mono);font-size:11.5px;color:#374151;background:#f1f3f6;border:1px solid var(--line);padding:3px 8px;border-radius:6px}
+  .ind{display:grid;place-items:center;width:25px;height:25px;border-radius:7px;color:#aab1bf;background:#f3f5f8;transition:color .15s,background .15s;flex:none}
+  .step:hover .ind{color:#fff;background:var(--ac)}
+  .desc{color:var(--muted);font-size:13.5px;margin:9px 0 0}
+  .tags{margin-top:12px;display:flex;flex-wrap:wrap;gap:7px 14px}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted)}
+  .tag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ac)}
+
+  .flowbox{margin-top:15px;background:#fafbfd;border:1px solid var(--line);border-radius:12px;padding:16px 14px 12px;color:var(--ac)}
+  .flowbox svg{width:100%;height:auto;display:block}
+  .flowbox .cap{font-size:11.5px;color:var(--muted);text-align:center;margin-top:8px}
+
+  .conn{height:30px;display:flex;align-items:center;justify-content:center;color:#c2c7d0}
+
+  /* modal */
+  .scrim{position:fixed;inset:0;background:#1c223066;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
+  .scrim.show{display:flex}
+  .modal{width:min(660px,100%);max-height:87vh;overflow:auto;background:var(--card);border-radius:16px;box-shadow:0 24px 70px #1c223040;position:relative}
+  .mtop{display:flex;align-items:center;gap:11px;padding:22px 24px 0}
+  .mtop .stepno{flex:none}
+  .mtop h2{font-size:20px;margin:0;font-weight:680;letter-spacing:-.01em;flex:1}
+  .close{border:none;background:none;cursor:pointer;color:var(--muted);font-size:17px;padding:5px 8px;border-radius:7px;line-height:1}
+  .close:hover{background:#f1f3f6;color:var(--ink)}
+  .mtag{color:var(--muted);font-size:14px;padding:13px 24px 2px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:16px 24px 4px}
+  @media(max-width:540px){.cols{grid-template-columns:1fr}}
+  .col h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ac);margin:0 0 11px;font-weight:750}
+  .col ul{margin:0;padding-left:17px;display:flex;flex-direction:column;gap:8px}
+  .col li{font-size:13.5px;line-height:1.55}
+  .col.why li::marker{color:#16a34a}
+  .mech{padding:16px 24px 8px;display:flex;flex-direction:column;gap:9px}
+  .acc{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .acc>button{width:100%;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:650;color:var(--ink);padding:11px 14px;display:flex;align-items:center;gap:9px}
+  .acc>button:hover{background:#f7f8fa}
+  .acc .chev{margin-left:auto;color:var(--muted);transition:transform .18s}
+  .acc.open .chev{transform:rotate(90deg)}
+  .acc .body{display:none;padding:0 14px 13px}
+  .acc.open .body{display:block}
+  .acc .body ul{margin:7px 0 0;padding-left:17px;color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:6px;line-height:1.55}
+  .loopdiag{font-family:var(--mono);font-size:12px;color:var(--ac);background:color-mix(in srgb,var(--ac) 8%,#fff);border:1px solid color-mix(in srgb,var(--ac) 25%,var(--line));border-radius:7px;padding:8px 11px;margin:9px 0 2px}
+  .mnav{display:flex;justify-content:space-between;padding:10px 24px 20px}
+  .mnav button{border:1px solid var(--line);background:none;cursor:pointer;font-family:inherit;font-size:12.5px;color:var(--muted);border-radius:8px;padding:8px 13px;font-weight:600}
+  .mnav button:hover{color:var(--ink);border-color:var(--ac)}
+  .foot{color:var(--muted);font-size:12px;margin-top:24px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kick">coverage pipeline</div>
+    <h1>dotnet-coverage-kit</h1>
+    <p class="lede">A toolkit for adding trustworthy test coverage to .NET services: it backfills tests onto existing
+    code, measures coverage with real tools (never guesses), records why every file is tested or skipped in a
+    checked-in manifest, and gates every change so coverage only goes up. Click a stage for the full detail.</p>
+  </header>
+
+  <div class="flow" id="flow"></div>
+  <p class="foot">Self-contained · works offline · see the README for the written walkthrough.</p>
+</div>
+
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+
+<script>
+const PHASES=[
+ {num:1,title:"Plan the repo",cmd:"coverage-init",ac:"#2563eb",
+  desc:"Once per repo: classify every source file against an objective rubric and draft the testing plan (the manifest).",
+  agentFlow:{agents:"each classifies a file-chunk",out:"clean plan"},
+  tagline:"One-time setup on a clean production branch. Ends with a per-repo plan a human only spot-checks.",
+  how:["Inventory projects &amp; architecture; form the target-set hypothesis.",
+       "Parallel sweep reads <b>every</b> file and labels it by an objective signal.",
+       "Synthesize one coherent manifest at the main agent.",
+       "Self-critique loop refines the draft until only unclear cases remain.",
+       "Write the manifest, overlay, runsettings, scripts, and CI workflow."],
+  why:["The manifest makes coverage reproducible — not a one-off AI guess.",
+       "Reading every file (not skipping small ones) avoids silent misclassification.",
+       "One critique head catches the same mistake repeated across projects."],
+  mech:[{title:"Parallel sweep — classify every file",loop:"",points:[
+          "Labels each file: target · integration-scope · e2e-scope · dto-no-logic · generated · cannot_test.",
+          "You pick the agent count (small repo → 1, large → 6–10); evidence is written to disk.",
+          "Trivial tiny files are collapsed into globs, not per-file rows."]},
+        {title:"Classification rubric — the signals",loop:"",points:[
+          "Every file is classified by an <b>objective signal in the source</b>, cited at <code>file:line</code> — not a vibe.",
+          "<b>target</b> (unit-scope) — has ≥1 method that branches <b>and</b> every dependency is mockable (no direct infra / IO / clock / random).",
+          "<b>integration-scope</b> — uses <code>DbContext</code>/a repository, <code>HttpClient</code>, file/network IO, or an external SDK directly, with no seam.",
+          "<b>e2e-scope</b> — a <code>ControllerBase</code>/<code>[ApiController]</code>, a hosted/background worker, or a <code>Program</code>/startup composition root.",
+          "<b>dto-no-logic</b> — only auto-properties / fields; no method body branches (complexity ≈ 1).",
+          "<b>generated</b> — <code>[GeneratedCode]</code>, a <code>*.g.cs</code>/<code>*.Designer.cs</code> file, or a <code>Migrations/</code> path.",
+          "<b>cannot_test (nondeterministic)</b> — direct <code>DateTime.Now</code>/<code>Guid.NewGuid</code>/<code>Random</code> with no injected seam.",
+          "God-classes (large IO orchestration) are classified <code>integration-scope</code> with their thin pure-logic slice noted as carve-out methods."]},
+        {title:"Self-critique loop — refine until clean",loop:"draft  ⇄  critique  →  refine",points:[
+          "Re-checks every label against the rubric, citing the signal at file:line.",
+          "Hunts false exclusions (testable code skipped) and false inclusions (untestable code kept).",
+          "Applies clear-cut fixes and re-checks; only gray areas go to the human."]}]},
+ {num:2,title:"Write the tests",cmd:"generate-tests",ac:"#0ea5e9",
+  desc:"Freeze existing behavior (characterization) and assert new behavior (spec), then critique the suite before baseline.",
+  agentFlow:{agents:"each writes tests for a chunk",out:"green suite"},
+  tagline:"Cover the whole worklist: characterization for existing code, spec for new code.",
+  how:["<b>Characterization</b> for old code — run it, pin the real value (run-capture-fill).",
+       "<b>Spec</b> for new/changed code — assert what it should do.",
+       "Untestable units → <code>cannot_test</code> with a reason; source is never edited.",
+       "Optionally fan the backfill out across agents you choose.",
+       "Suite self-critique loop runs before the baseline locks in."],
+  why:["A safety net so future changes can't silently break behavior.",
+       "Old behavior frozen as-is; only new code is held to intent.",
+       "The pre-baseline critique stops a weak suite freezing a misleading floor."],
+  mech:[{title:"Parallel backfill (optional, big worklists)",loop:"",points:[
+          "You choose throughput: 1 agent ≈ a day, 3 ≈ hours, 10 ≈ ~an hour.",
+          "Each agent works a chunk in its own git worktree — no write collisions.",
+          "Generate → verify per chunk → one assemble lands it all on the main tree."]},
+        {title:"Suite self-critique loop — before baseline",loop:"critique  →  fix  →  re-check",points:[
+          "Is each <code>cannot_test</code> legit, or a dodge? Re-checks every one.",
+          "Flags shallow tests (high C0 / low C1) and tautological assertions.",
+          "Never audits the C0/C1 numbers — those are tool output."]}]},
+ {num:3,title:"Measure & explain",cmd:"report.sh",ac:"#0d9488",
+  desc:"One command produces the Unit Test Report — the same report locally and in CI.",
+  tags:[["deterministic","det"]],
+  tagline:"One command, any time, no arguments. Writes coverage/REPORT.md — the same report CI shows on a PR.",
+  how:["Runs the suite + dotnet-coverage + ReportGenerator; reads test results from the .trx files.",
+       "Joins coverage to the manifest and computes Raw (all) vs Adjusted (in-scope).",
+       "Emits a fixed six-section report card — saved to coverage/REPORT.md."],
+  why:["Every number is tool output — never estimated by a model.",
+       "Risk hotspots rank what to test next by complexity × low coverage.",
+       "Same report locally and in CI — what you see is what the PR sees."],
+  mech:[{title:"Report anatomy — six sections",loop:"",points:[
+          "<b>1 Test Results</b> · <b>2 Coverage Summary</b> (+ the gate block) · <b>3 Coverage by Layer</b>.",
+          "<b>4 Risk Hotspots</b> (complex, under-covered methods) · <b>5 Excluded Code</b> · <b>6 Not Testable</b>.",
+          "Two-pass throughout — Adjusted (target) vs Raw (all), for C0 / C1 / Method.",
+          "Full per-file drill-down lives in the HTML report; the Markdown is the executive view."]}]},
+ {num:4,title:"Set the baseline",cmd:"merge → master",ac:"#16a34a",
+  desc:"Merge to master; the in-scope coverage at that commit becomes the ratchet floor.",
+  tags:[],
+  tagline:"The merge commit is the baseline. Its in-scope coverage is recorded as the floor — it only moves up from here.",
+  how:["Run the suite green and merge to the production branch.",
+       "The measured in-scope overall is written to the manifest as the floor.",
+       "Every later PR must hold at or above that number."],
+  why:["A concrete, committed line in the sand — not a vague aspiration.",
+       "Stored in a tracked file, so &ldquo;don't regress&rdquo; is enforceable and reviewable."],
+  mech:[]},
+ {num:5,title:"Keep it green",cmd:"gate",ac:"#d97706",
+  desc:"Every change is checked — locally before push, and by CI on every PR to master.",
+  tags:[["gate","gate"]],
+  tagline:"Developers run the same gate locally; CI enforces it on every PR. Branch protection makes it binding.",
+  how:["Local: <code>BASE=origin/master ./report.sh</code> gives the exact PR gate before you push.",
+       "CI: the gate runs on every PR to master and blocks merge on any breach.",
+       "A required status check + a move-up-only floor make it enforcement, not advice."],
+  why:["Diff coverage forces new code to be tested — the ratchet alone is too weak for small PRs.",
+       "The scope guard stops dodging the gate by editing the skip-list.",
+       "Coverage can only climb over time."],
+  mech:[{title:"The four checks",loop:"",points:[
+          "<b>Diff coverage</b> — lines you changed must be tested.",
+          "<b>Ratchet</b> — overall in-scope coverage can't drop below the floor.",
+          "<b>Scope-change guard</b> — growing the skip-list needs a maintainer label.",
+          "<b>Green suite</b> — all tests pass on the merged result."]}]}
+];
+
+const flow=document.getElementById('flow');
+const scrim=document.getElementById('scrim');
+const modal=document.getElementById('modal');
+let open=-1;
+const IND=`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 10.5 L10.5 5.5 M6 5.5 H10.5 V10"/></svg>`;
+
+// Big agent-loop diagram: 3 parallel agents converge into 1 critique node, which loops back on reject.
+function bigFlow(t){
+  return `<div class="flowbox"><svg viewBox="0 0 720 214" role="img" aria-label="many parallel agents feed one critique agent that loops back on reject">
+    <!-- loop: critique top, straight up, left over the agents, straight down into them -->
+    <path d="M411 89 L411 26 L86 26 L86 40" fill="none" stroke="var(--ac)" stroke-width="1.8" stroke-dasharray="6 5"/>
+    <path d="M80 33 L86 41 L92 33" fill="none" stroke="var(--ac)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="184" y="16" width="128" height="19" rx="4" fill="#fafbfd"/>
+    <text x="248" y="30" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ac)">reject → re-run</text>
+    <!-- parallel agents -->
+    <g font-size="12.5" fill="#475569" font-weight="500">
+      <g fill="#edeff4">
+        <rect x="16" y="44" width="150" height="40" rx="9"/>
+        <rect x="16" y="96" width="150" height="40" rx="9"/>
+        <rect x="16" y="148" width="150" height="40" rx="9"/>
+      </g>
+      <text x="91" y="69" text-anchor="middle">agent 1</text>
+      <text x="91" y="121" text-anchor="middle">agent 2</text>
+      <text x="91" y="173" text-anchor="middle">agent … N</text>
+    </g>
+    <text x="91" y="206" text-anchor="middle" font-size="10.5" fill="#7a8294">${t.agents}</text>
+    <!-- converge into critique -->
+    <g stroke="#c0c6d2" stroke-width="1.5" fill="none">
+      <path d="M166 64 C 232 64, 248 116, 300 116"/>
+      <line x1="166" y1="116" x2="300" y2="116"/>
+      <path d="M166 168 C 232 168, 248 116, 300 116"/>
+      <path d="M294 111 L301 116 L294 121" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <!-- critique node -->
+    <rect x="304" y="89" width="214" height="56" rx="9" fill="#edeff4"/>
+    <text x="411" y="112" text-anchor="middle" font-size="14" font-weight="600" fill="#475569">1 critique agent</text>
+    <text x="411" y="129" text-anchor="middle" font-size="10.5" fill="#7a8294">single · checks every result</text>
+    <!-- accept -> output -->
+    <g stroke="#c0c6d2" stroke-width="1.5" fill="none"><line x1="518" y1="117" x2="566" y2="117"/><path d="M560 112 L567 117 L560 122" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <text x="544" y="107" text-anchor="middle" font-size="10.5" fill="#7a8294">accept</text>
+    <rect x="570" y="96" width="134" height="42" rx="9" fill="#edeff4"/>
+    <text x="637" y="122" text-anchor="middle" font-size="12.5" font-weight="600" fill="#475569">${t.out}</text>
+  </svg></div>`;
+}
+
+PHASES.forEach((p,i)=>{
+  const s=document.createElement('button');
+  s.className='step';
+  const meta = p.agentFlow ? bigFlow(p.agentFlow)
+      : (p.tags && p.tags.length ? `<div class="tags">${p.tags.map(t=>`<span class="tag">${t[0]}</span>`).join('')}</div>` : '');
+  s.innerHTML=`<div class="shead"><span class="stepno">Step ${p.num}</span><h2>${p.title}</h2>
+      <span class="cmd">${p.cmd}</span><span class="ind">${IND}</span></div>
+    <div class="desc">${p.desc}</div>
+    ${meta}`;
+  s.addEventListener('click',()=>openModal(i));
+  flow.appendChild(s);
+  if(i<PHASES.length-1){
+    const c=document.createElement('div');c.className='conn';
+    c.innerHTML=`<svg width="16" height="26" viewBox="0 0 16 26" fill="none" stroke="currentColor" stroke-width="1.6"><line x1="8" y1="0" x2="8" y2="19"/><path d="M3 15 L8 24 L13 15"/></svg>`;
+    flow.appendChild(c);
+  }
+});
+
+function mechHTML(m){
+  const loop=m.loop?`<div class="loopdiag">${m.loop}</div>`:'';
+  return `<div class="acc"><button>${m.title}<span class="chev">›</span></button>
+    <div class="body">${loop}<ul>${m.points.map(pt=>`<li>${pt}</li>`).join('')}</ul></div></div>`;
+}
+
+function openModal(i){
+  open=i; const p=PHASES[i];
+  modal.innerHTML=`
+    <div class="mtop"><span class="stepno">Step ${p.num}</span><h2>${p.title}</h2>
+      <span class="cmd">${p.cmd}</span><button class="close" id="x">✕</button></div>
+    <div class="mtag">${p.tagline}</div>
+    <div class="cols">
+      <div class="col"><h3>How it works</h3><ul>${p.how.map(h=>`<li>${h}</li>`).join('')}</ul></div>
+      <div class="col why"><h3>Why it matters</h3><ul>${p.why.map(w=>`<li>${w}</li>`).join('')}</ul></div>
+    </div>
+    ${p.mech.length?`<div class="mech">${p.mech.map(mechHTML).join('')}</div>`:''}
+    <div class="mnav"><button id="pv">← Prev</button><button id="nx">Next →</button></div>`;
+  scrim.classList.add('show');
+  modal.querySelector('#x').onclick=closeModal;
+  modal.querySelector('#pv').onclick=()=>openModal((i-1+PHASES.length)%PHASES.length);
+  modal.querySelector('#nx').onclick=()=>openModal((i+1)%PHASES.length);
+  modal.querySelectorAll('.acc>button').forEach(b=>b.onclick=()=>b.parentElement.classList.toggle('open'));
+  modal.scrollTop=0;
+}
+function closeModal(){scrim.classList.remove('show');open=-1;}
+scrim.addEventListener('click',e=>{if(e.target===scrim)closeModal();});
+document.addEventListener('keydown',e=>{
+  if(open<0)return;
+  if(e.key==='Escape')closeModal();
+  if(e.key==='ArrowRight')openModal((open+1)%PHASES.length);
+  if(e.key==='ArrowLeft')openModal((open-1+PHASES.length)%PHASES.length);
+});
+</script>
+</body>
+</html>

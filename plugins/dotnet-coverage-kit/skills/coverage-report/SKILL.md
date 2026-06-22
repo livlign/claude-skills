@@ -1,0 +1,89 @@
+---
+name: coverage-report
+description: "Produce the latest deterministic C0/C1 coverage report for a .NET service. Use when the user asks for a 'coverage report', 'coverage status', 'what's covered', 'C0 C1 numbers', or wants to check the gate. Runs dotnet-coverage + ReportGenerator (numbers are tool output, never estimated), then joins uncovered files against the manifest to explain every inclusion, exclusion, and cannot-test entry. Runnable any time."
+---
+
+# coverage-report
+
+Numbers come only from the tool. The model never estimates, infers, or rounds coverage.
+The model's only role is joining tool output to the manifest's reasons and narrating the
+observations section.
+
+Read `${CLAUDE_PLUGIN_ROOT}/rules/coverage-report.base.md` and the repo's
+`.claude/coverage/refs/coverage-manifest.yml` first.
+
+## One command, any time
+
+The whole report is one wrapper — no arguments needed (it auto-detects the `.sln`):
+
+```
+./.claude/coverage/tools/report.sh
+```
+
+It collects coverage, joins it against the manifest, **writes `coverage/REPORT.md`**, prints
+the same Markdown, and exits non-zero if the ratchet fails (so it doubles as a local gate).
+This is the *identical* path CI runs — the report a developer sees locally is the report on
+the PR. When invoked as the `coverage-report` skill, just run it and surface the result;
+don't re-derive numbers by hand.
+
+## Steps
+
+1. **Run the wrapper.** `./.claude/coverage/tools/report.sh` (or, before init has copied it,
+   `${CLAUDE_PLUGIN_ROOT}/scripts/report.sh`). Pass a solution path or repo-filter only if
+   auto-detect is wrong. If the tools or solution are missing, report that — never fabricate
+   numbers. All numbers come from the tool + the deterministic join in `coverage-gate.py`; the
+   model does not parse XML or compute percentages.
+
+2. **Append the one narrated section — Observations.** The script's report is complete and
+   deterministic (verdict, headline, Do-next, insights, by-bucket). The *only* thing the model
+   adds is **Observations**: suspected-latent-bug entries surfaced during generation (frozen,
+   not endorsed). Append them under an `## Observations` heading; add nothing else.
+
+3. **At baseline only.** Write the measured Adjusted overall into `baseline.recorded_overall`
+   (with `basis: in-scope`) so it becomes the ratchet floor. Not on ordinary report runs.
+
+## Report shape — the Unit Test Report (produced by `coverage-gate.py`)
+
+Fixed six-section report card. Header carries commit / branch / date / tooling / verdict;
+coverage is two-pass throughout — **Adjusted** (target set, the headline + ratchet basis) and
+**Raw** (all instrumented), for C0, C1, and Method.
+
+```
+# Unit Test Report — <repo>
+<commit · branch · date · tooling · verdict (gate PASS/FAIL · Adjusted C0/C1)>
+
+## 1. Test Results     total / passed / failed / skipped / flaky / duration (from .trx)
+## 2. Coverage Summary Raw | Adjusted | Baseline | Δ, for C0 / C1 / Method; + the Gate block
+                       (ratchet always; diff-coverage + scope-change guard in PR mode, --base)
+## 3. Coverage by Layer columns: Layer | Raw lines | Raw branches | Testable lines |
+                       Testable branches | C0 | C1 — where C0/C1 cells are "NN% (covered/total)"
+                       over the testable slice (covered counts fold into the cell, no separate
+                       covered columns). Rows are
+                       human LAYER names (Application/Service — TARGET, Infrastructure/Integration,
+                       Presentation/Workers, Models/DTOs, Generated, Non-product) mapped from the
+                       manifest categories — NEVER the raw `excl: <category>` strings (an `excl:` row
+                       showing a coverage % read as "excluded but covered??"). Raw = all code in the
+                       layer; Testable = its unit-testable slice (whole file in the target layer; only
+                       carve-out methods elsewhere); C0/C1 are of the testable slice. Only the target
+                       layer feeds the Adjusted headline. + a per-file table (same columns + the file's
+                       Layer) so a 1631-line infra file reading as 131 testable lines is clear.
+## 4. Risk Hotspots    methods with complexity ≥5 and coverage <80%, sorted TARGET-FIRST, with a
+                       "What to do" column + per-bucket guidance (target=unit-test; integration=
+                       integration test/extract carve-out; e2e=E2E/refactor) and a takeaway line
+                       calling out how many are real in-scope unit gaps
+## 5. Excluded Code    manifest exclusions grouped by category — mechanism = "manifest pattern"
+## 6. Not Testable     cannot_test entries: target · why · category · action
+## Observations        (appended by the model) frozen latent-bug notes, if any
+```
+
+Honest-reporting rules baked into the generator (do not "fix" these to mimic a different stack):
+- **Tooling** reflects the real collector — Microsoft Code Coverage (`dotnet-coverage`) +
+  ReportGenerator + xUnit — *not* Coverlet (dormant in this kit).
+- **Mechanism** (section 5) is the manifest join applied at report time; source is never
+  annotated with `[ExcludeFromCodeCoverage]` and coverlet `--exclude` is not used.
+- **Flaky** (section 1) is `—`: a single non-retry run cannot observe flakiness.
+- **Layers** (section 3) are the repo's actual buckets, architecture-driven — not a fixed
+  `Domain`/`Application` template.
+
+Numbers (sections 1–4) are tool output joined deterministically; the model never edits them.
+The full per-file drill-down lives in the HTML report — the Markdown is the executive view.
