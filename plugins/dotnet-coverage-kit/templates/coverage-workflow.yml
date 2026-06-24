@@ -43,14 +43,19 @@ jobs:
       # report to the PR summary and FAILS the job on any gate breach.
       # A maintainer can intentionally reduce scope by adding the label below to the PR.
       - name: Coverage gate
+        # base_ref is passed via env (not interpolated into the shell) to avoid script injection;
+        # coverage-gate.py additionally allowlists the ref before it reaches git.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          SCOPE_CHANGE: ${{ contains(github.event.pull_request.labels.*.name, 'coverage-scope-change') }}
         run: |
           ALLOW=""
-          if [ "${{ contains(github.event.pull_request.labels.*.name, 'coverage-scope-change') }}" = "true" ]; then
+          if [ "$SCOPE_CHANGE" = "true" ]; then
             ALLOW="--allow-scope-change"
           fi
           python .claude/coverage/tools/coverage-gate.py \
             --cobertura coverage/html/Cobertura.xml \
             --manifest .claude/coverage/refs/coverage-manifest.yml \
-            --base "origin/${{ github.base_ref }}" \
+            --base "origin/$BASE_REF" \
             $ALLOW \
             --summary "$GITHUB_STEP_SUMMARY"

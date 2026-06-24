@@ -177,6 +177,36 @@ def md_to_html(md):
     return "<!doctype html><html><head><meta charset='utf-8'><title>Unit Test Report</title><style>%s</style></head><body>\n%s\n</body></html>\n" % (css, "\n".join(body))
 
 
+_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/~^@-]*$")
+
+
+def _safe_ref(ref):
+    """Allowlist a git ref/sha. `--base` is spliced into `git diff <base>...HEAD`; a value
+    starting with `-` (or carrying odd characters) would be read as a git *option* rather than
+    a revision — argument injection (CWE-78). Anything that isn't a plain ref is rejected here,
+    before it can reach git()."""
+    if ref is None:
+        return None
+    if not _REF_RE.match(ref):
+        print("coverage-gate: refusing suspicious --base ref %r" % ref, file=sys.stderr)
+        sys.exit(2)
+    return ref
+
+
+def _within_cwd(path):
+    """Resolve `path` and confine it to the working tree, returning the real path when it is the
+    cwd or below it and None otherwise — blocks `../`-style traversal in --test-results-dir
+    (CWE-22). Coverage always runs from the repo root with a relative results dir, so a legitimate
+    value is never rejected."""
+    if not path:
+        return None
+    root = os.path.realpath(os.getcwd())
+    full = os.path.realpath(path)
+    if full == root or full.startswith(root + os.sep):
+        return full
+    return None
+
+
 def git(arglist):
     return subprocess.run(["git"] + arglist, capture_output=True, text=True)
 
@@ -237,6 +267,7 @@ def find_key(files, gitpath):
 
 def parse_trx(results_dir):
     """Aggregate VSTest .trx counters across all trx files. Returns dict or None."""
+    results_dir = _within_cwd(results_dir)
     if not results_dir or not os.path.isdir(results_dir):
         return None
     trx = glob.glob(os.path.join(results_dir, "**", "*.trx"), recursive=True)
@@ -300,6 +331,7 @@ def main():
     ap.add_argument("--html", help="also write the report as a self-contained HTML file at this path")
     ap.add_argument("--tooling", default="Microsoft Code Coverage (dotnet-coverage) + ReportGenerator + xUnit")
     args = ap.parse_args()
+    args.base = _safe_ref(args.base)
 
     with open(args.manifest, encoding="utf-8") as fh:
         m = yaml.safe_load(fh)
