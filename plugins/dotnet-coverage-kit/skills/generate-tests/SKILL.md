@@ -28,10 +28,20 @@ Items already covered by existing tests are checked off, not re-done. Items in `
 are out. Everything else in the set MUST be either tested in this backfill or appended to
 `cannot_test` with a reason — there is no third option of silently leaving it untouched.
 
-**Hard rule: a coverage percentage is never a stopping condition.** Do not stop because the
-number "looks low" or "looks done." The pass ends only when every worklist item has a test or
-a `cannot_test` entry. Stopping at an arbitrary % and jumping to commit is the failure this
-rule exists to prevent.
+**An item is "done" only when its branches are covered — not when it has *a* green test.** This
+is the definition that matters and the one most often shortcut. A method with filters, a
+`switch`, asc/desc, null guards or error paths needs an input pinned per branch; one happy-path
+test checks the item off the worklist while leaving 40–50% of its branches cold. A test
+*existing* is not the bar — its branches being *exercised* (or sent to `cannot_test` with a
+reason) is. Treat an under-covered target method exactly like an untested worklist item: not
+done. See "Cover the BRANCHES" below for how.
+
+**Hard rule: a coverage percentage is never a stopping condition — in either direction.** Do
+not stop because the number "looks low" or "looks done," and do not stop at worklist
+completeness while target-layer methods still have uncovered branches. The pass ends only when
+every worklist item has **branch-covered** tests or a `cannot_test` entry. The classic failure
+this prevents: writing one test per file, watching the suite go green, and stopping at ~50–60%
+C0/C1 because each method got one path — that is an **unfinished** pass, not a complete one.
 
 ## Phasing — when the worklist is large, plan it and report progress
 
@@ -54,8 +64,10 @@ A legacy worklist can be enormous. Two levers: make each unit cheaper, and (opti
 at once. The efficiency rules apply **whichever way you run** — sequential or parallel:
 
 1. **Batch run-capture-fill per class, not per method.** The dominant cost is build + test
-   execution. Write the whole test class for a file, build once, run the class once, capture
-   *all* actual values from that single run, then fill. Never pay a build/run cycle per method.
+   execution. Write the whole test class for a file — **one test per branch of each method, not
+   one test per method** — build once, run the class once, capture *all* actual values from that
+   single run, then fill. The economy is in batching the build/run, not in writing fewer tests:
+   never pay a build/run cycle per method, and never trade away branch coverage to save cycles.
 2. **Pre-triage before the loop, using the init signals.** Before the write-build-run loop, scan
    each unit for an untestable signal (direct `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`
    with no seam; works only against real infra/IO). Route those straight to `cannot_test` — do
@@ -93,13 +105,35 @@ single assemble step applies every chunk's patch to the main tree, merges `canno
 once (no manifest write races), and confirms the full suite is green. It leaves the tree dirty:
 the promotion gate below still governs when the baseline report and commit happen.
 
-## Promotion gate — report and commit only when the worklist is exhausted
+## Measure for feedback DURING the pass (this is not the baseline)
 
-`coverage-report` (to set/raise the baseline) and any commit are **promotion steps**. They
-run ONLY after the entire worklist is exhausted (every item tested or in `cannot_test`) **and
-the suite critique below has run**. Per the action ladder, generation itself is edit-only:
-leave the tree dirty and stop. Do not run the baseline report mid-backfill, and do not propose
-committing a partial backfill — a partial baseline locks in a misleadingly low floor.
+You cannot judge branch completeness by eye — measure it, and measure it *before* you decide
+you are done, not after. Measuring for feedback and *locking the baseline* are two different
+acts; only the latter is a promotion step. So:
+
+- **In-loop, as often as useful:** run `./.claude/coverage/tools/report.sh` read-only to see
+  C0/C1 and the **Risk Hotspots** table. This writes a throwaway `REPORT.md` but you do NOT
+  write `baseline.recorded_overall` from it — it is a feedback instrument, nothing more.
+- **Read the signal and act:** every **target-layer** (non-`excl:`) row in Risk Hotspots, and
+  every target file below the manifest's diff-coverage branch threshold, is an unfinished
+  worklist item. Go back and pin inputs for its missing branches (run-capture-fill). Re-measure.
+  Loop until no target-layer method sits below the threshold. This is the part that moves a
+  pass from ~50–60% to 9x% — and it belongs **in the generation loop**, not in a later cleanup.
+
+This is explicitly NOT "stopping on a number" — you are not chasing a percentage, you are
+discharging worklist items whose branches the number reveals are still uncovered. The pass is
+done when that list is empty, whatever the resulting percentage happens to be.
+
+## Promotion gate — set the baseline and commit only when the worklist is exhausted
+
+`coverage-report` (to set/raise the **baseline**) and any commit are **promotion steps**. They
+run ONLY after the entire worklist is exhausted (every item **branch-covered** or in
+`cannot_test`, per the in-loop measurement above) **and the suite critique below has run**. Per
+the action ladder, generation itself is edit-only: leave the tree dirty and stop. The
+distinction from the in-loop measurement: that one is read-only feedback you may run anytime;
+this one *writes the floor*, so it runs once, last. Do not write `baseline.recorded_overall`
+mid-backfill, and do not propose committing a partial backfill — a partial baseline locks in a
+misleadingly low floor.
 
 **Measure via the wrapper, not by hand.** When you do measure, run the one-command wrapper
 `./.claude/coverage/tools/report.sh` (it collects with the repo filefilter, joins the manifest, and
@@ -194,7 +228,9 @@ the rest uncovered — that is the partial-coverage gap that otherwise slips to 
 Hotspots (e.g. a `GetAll` with keyword + type + unit filters and a 3-way order switch needs a
 test per filter and per switch arm). Enumerate the method's branches and pin an input for each;
 a branch that genuinely cannot be reached without real infra goes to `cannot_test`, not ignored.
-This is cheapest here, at write time — the suite critique's item 5 is the backstop, not the plan.
+**Do this here, at write time — it is the plan, not an afterthought.** The in-loop measurement
+("Measure for feedback") tells you which methods you missed; the suite critique's item 5 is only
+a final backstop for what slips through, never the place you first go looking for branch coverage.
 
 ## Spec mode
 
