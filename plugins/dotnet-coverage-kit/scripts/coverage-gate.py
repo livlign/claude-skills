@@ -207,8 +207,30 @@ def _within_cwd(path):
     return None
 
 
+_GIT_FLAGS_OK = {"--unified=0", "--diff-filter=ACMR", "--diff-filter=A",
+                 "--name-only", "--short", "--abbrev-ref", "--"}
+_GIT_ARG_OK = re.compile(r"^[A-Za-z0-9._/:~^@*-]+$")
+
+
 def git(arglist):
-    return subprocess.run(["git"] + arglist, capture_output=True, text=True)
+    # Defense AT THE SINK (CWE-78 argument/command injection): every argument is validated here,
+    # at the subprocess call itself, against an explicit allowlist — any "-"-prefixed token must
+    # be a known git flag (so a value like "--upload-pack=..." can never be parsed as an option),
+    # and every other token must match a safe character set. The process is launched list-form,
+    # never shell=True, so there is also no shell for metacharacters to reach. (Sink-local on
+    # purpose: scanners' taint analysis does not trace sanitizers in separate helper functions.)
+    for a in arglist:
+        if not isinstance(a, str):
+            print("coverage-gate: refusing non-string git argument", file=sys.stderr)
+            sys.exit(2)
+        if a.startswith("-"):
+            if a not in _GIT_FLAGS_OK:
+                print("coverage-gate: refusing unknown git flag %r" % a, file=sys.stderr)
+                sys.exit(2)
+        elif not _GIT_ARG_OK.match(a):
+            print("coverage-gate: refusing unsafe git argument %r" % a, file=sys.stderr)
+            sys.exit(2)
+    return subprocess.run(["git"] + list(arglist), capture_output=True, text=True)
 
 
 def _diff(base, extra):
@@ -267,10 +289,18 @@ def find_key(files, gitpath):
 
 def parse_trx(results_dir):
     """Aggregate VSTest .trx counters across all trx files. Returns dict or None."""
-    results_dir = _within_cwd(results_dir)
-    if not results_dir or not os.path.isdir(results_dir):
+    if not results_dir:
         return None
-    trx = glob.glob(os.path.join(results_dir, "**", "*.trx"), recursive=True)
+    # Confine to the working tree AT THE SINK (CWE-22 path traversal): resolve the path and
+    # require it to be the cwd or strictly below it (a realpath + startswith check) BEFORE it is
+    # globbed, so a "../"-style value cannot escape the repo. Coverage always runs from the repo
+    # root with a relative results dir, so a legitimate value is never rejected. (Sink-local on
+    # purpose: scanners do not trace the containment when it lives in a separate helper.)
+    root = os.path.realpath(os.getcwd())
+    full = os.path.realpath(results_dir)
+    if not (full == root or full.startswith(root + os.sep)) or not os.path.isdir(full):
+        return None
+    trx = glob.glob(os.path.join(full, "**", "*.trx"), recursive=True)
     if not trx:
         return None
     agg = {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
