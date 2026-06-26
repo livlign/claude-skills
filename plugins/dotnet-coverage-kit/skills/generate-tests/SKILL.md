@@ -94,13 +94,17 @@ so present the trade-off and let them choose:
    - **1 agent** — sequential, lowest token burn, ~a day for a big service.
    - **3 agents** (default) — balanced, ~6 hours.
    - **10 agents** — fastest, highest burn, ~1 hour.
-3. On their choice, invoke the workflow:
+3. On their choice, **write the risk-ordered worklist to disk** as a JSON array at
+   `coverage/backfill/worklist.json` (each item shaped `{ file, methods?, group?, mode? }`), then
+   invoke the workflow with the manifest **path, not the list itself** (a large inline `worklist`
+   array mis-parses in the tool call):
    `Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/coverage-backfill.workflow.js",
-   args: { concurrency: <chosen>, solution: "<sln>", worklist: [...] } })`.
+   args: { concurrency: <chosen>, solution: "<sln>", worklistManifest: "coverage/backfill/worklist.json" } })`.
    If the user just says "go", default `concurrency: 3`.
 
-The workflow partitions the worklist into `concurrency` chunks (one agent each, in its own git
-worktree so parallel writes don't collide), generates + adversarially verifies each chunk, then a
+The workflow reads the worklist off disk and partitions it into `concurrency` chunks (one agent
+each, in its own git worktree so parallel writes don't collide), generates + adversarially verifies
+each chunk, then a
 single assemble step applies every chunk's patch to the main tree, merges `cannot_test` discoveries
 once (no manifest write races), and confirms the full suite is green. It leaves the tree dirty:
 the promotion gate below still governs when the baseline report and commit happen.
