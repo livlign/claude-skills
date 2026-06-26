@@ -89,10 +89,15 @@ State the branch and commit you initialized against in the step 11 report, so th
       tokens).
    2. **Clear `coverage/sweep/` first** (`rm -rf coverage/sweep`) so a prior or crashed run
       cannot leave stale `chunk-N.json` files behind — a different chunk count would otherwise
-      mix old and new evidence. Then invoke
+      mix old and new evidence. Then **write the enumerated paths to disk** as a JSON array at
+      `coverage/sweep/files.json` (e.g. pipe your file enumeration through `jq -R . | jq -s .`,
+      or write the array directly). **Pass the manifest path, never the list itself** — a large
+      inline `files` array mis-parses in the tool call, and inlining it into the workflow script
+      trips the approval-dialog control-char guard (CRLF from a Windows heredoc). Then invoke
       `Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/coverage-sweep.workflow.js",
-      args: { concurrency: <chosen>, files: [...all source files], rubric: "<the table above>",
-      evidenceDir: "coverage/sweep" } })`. If the user just says "go", default `concurrency: 3`.
+      args: { concurrency: <chosen>, filesManifest: "coverage/sweep/files.json",
+      rubric: "<the table above>", evidenceDir: "coverage/sweep" } })`. If the user just says
+      "go", default `concurrency: 3`.
 
    **Evidence goes to disk, not into context.** Each chunk agent writes ALL its per-file rows
    `{ path, classification, signal, confidence, trivial, carveOutMethods, notes }` to

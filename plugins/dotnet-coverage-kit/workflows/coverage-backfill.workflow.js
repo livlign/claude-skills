@@ -2,26 +2,64 @@ export const meta = {
   name: 'coverage-backfill',
   description: 'Fan out the characterization/spec test backfill across the manifest worklist at a user-chosen parallelism, verify each chunk, then assemble into the working tree',
   phases: [
-    { title: 'Plan', detail: 'partition the worklist into chunks' },
+    { title: 'Plan', detail: 'read the worklist manifest from disk and partition it into chunks' },
     { title: 'Generate', detail: 'one worktree-isolated agent per chunk' },
     { title: 'Verify', detail: 'adversarial check that tests are real, not vacuous' },
     { title: 'Assemble', detail: 'apply patches to the main tree, confirm suite green' },
   ],
 }
 
-// args = { concurrency: number, solution: string, worklist: Array<{ file, methods?, group?, mode? }> }
-// The CALLER (generate-tests skill) builds the worklist from the manifest, risk-orders it, and
-// asks the user for `concurrency` BEFORE invoking. This script does not prompt.
+// args = { concurrency: number, solution: string, worklistManifest: string }
+// The CALLER (generate-tests skill) builds the worklist from the manifest, risk-orders it, writes
+// it as a JSON array to `worklistManifest` (default coverage/backfill/worklist.json), and asks the
+// user for `concurrency` BEFORE invoking. The worklist is NOT passed inline through args — a large
+// risk-ordered worklist mis-parses in the tool call. Workflow scripts cannot read disk, so a Plan
+// agent reads the manifest and returns the worklist into this script's memory; the script then
+// partitions it and inlines each chunk's items into a worktree agent's prompt (worktrees do not see
+// the untracked coverage/ manifest, so paths must travel in the prompt, not via a file read). This
+// script does not prompt the user.
 const concurrency = Math.max(1, Math.floor(Number(args && args.concurrency) || 3))
 const solution = (args && args.solution) || ''
-const worklist = (args && Array.isArray(args.worklist)) ? args.worklist : []
-
-if (!worklist.length) {
-  log('Empty worklist — nothing to backfill. Run coverage-init and confirm the manifest has a target set.')
-  return { error: 'empty-worklist' }
-}
+const worklistManifest = (args && args.worklistManifest) || 'coverage/backfill/worklist.json'
 
 phase('Plan')
+// The script holds no worklist; a Plan agent reads it off disk and returns it. Reading + validating
+// happens in the agent (robust structured output), not by typing a big array into the tool call.
+const WORKLIST = {
+  type: 'object',
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['file'],
+        properties: {
+          file: { type: 'string' },
+          methods: { type: 'array', items: { type: 'string' } },
+          group: { type: 'string' },
+          mode: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const planPrompt = [
+  'You are the PLANNING step of a parallel .NET test backfill. You do not write any tests — you only load a worklist. Read-only.',
+  `Read the JSON file at \`${worklistManifest}\`. It is a JSON array of worklist items, each shaped { file, methods?, group?, mode? }.`,
+  'Return it verbatim as { items: [...] }, preserving order (the caller has already risk-ordered it). Do not add, drop, reorder, or invent items.',
+  'If the manifest is missing, empty, or not a JSON array, return { items: [] }.',
+].join('\n')
+
+const plan = await agent(planPrompt, { label: 'plan', phase: 'Plan', schema: WORKLIST })
+const worklist = (plan && Array.isArray(plan.items)) ? plan.items : []
+
+if (!worklist.length) {
+  log(`Empty worklist — \`${worklistManifest}\` is missing, empty, or not a JSON array. Run coverage-init and confirm the manifest has a target set.`)
+  return { error: 'empty-worklist', worklistManifest }
+}
+
 // One agent per chunk = exactly the parallelism the user chose. Chunking (not one-agent-per-file)
 // means one worktree build per agent instead of one per file, and lets a chunk reuse shared
 // fixtures. The caller orders the worklist so contiguous items share a service/folder.

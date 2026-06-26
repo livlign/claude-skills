@@ -2,30 +2,68 @@ export const meta = {
   name: 'coverage-sweep',
   description: 'Classify every source file against the coverage classification rubric, in parallel chunks. Each chunk writes its full per-file evidence to disk and returns only counts + the rows needing attention, so the main agent can synthesize and critique without holding ~2k rows in context',
   phases: [
-    { title: 'Plan', detail: 'partition files into chunks' },
-    { title: 'Classify', detail: 'one agent per chunk: classify, write evidence to disk, return a summary' },
+    { title: 'Plan', detail: 'read the files manifest from disk and partition it into per-chunk lists' },
+    { title: 'Classify', detail: 'one agent per chunk: read its list, classify, write evidence to disk, return a summary' },
   ],
 }
 
-// args = { concurrency, files: string[], rubric: string, evidenceDir?: string }
-// The CALLER (coverage-init skill) enumerates files, asks the user for `concurrency`, passes the
-// rubric, and reads the on-disk evidence afterward. Synthesis + the single cross-project critique
-// run at the MAIN agent, NOT here.
+// args = { concurrency, filesManifest, rubric, evidenceDir? }
+// The CALLER (coverage-init skill) enumerates files and writes them as a JSON array of paths to
+// `filesManifest` (default coverage/sweep/files.json), asks the user for `concurrency`, and passes
+// the rubric. The file list is NEVER passed inline through args or the script — on a large repo
+// that array mis-parses in the tool call and, if inlined into the script, trips the control-char
+// guard on the Workflow approval dialog (CRLF from a Windows heredoc). Workflow scripts cannot read
+// disk, so a Plan agent reads the manifest and partitions it into on-disk per-chunk lists; each
+// Classify agent reads its own list. Synthesis + the single cross-project critique run at the MAIN
+// agent, NOT here.
 const concurrency = Math.max(1, Math.floor(Number(args && args.concurrency) || 3))
-const files = (args && Array.isArray(args.files)) ? args.files : []
+const filesManifest = (args && args.filesManifest) || 'coverage/sweep/files.json'
 const rubric = (args && args.rubric) || '(rubric not supplied — read it from the coverage-init skill conventions)'
 const evidenceDir = (args && args.evidenceDir) || 'coverage/sweep'
 
-if (!files.length) {
-  log('No files to classify — nothing to sweep.')
-  return { error: 'empty-file-list' }
+phase('Plan')
+// The script holds no file paths; a Plan agent reads the manifest off disk and splits it into
+// `concurrency` contiguous per-chunk list files. It returns only the chunk-list paths + counts, so
+// no large array ever crosses the args boundary or sits in this script's memory.
+const PLAN_RESULT = {
+  type: 'object',
+  required: ['fileCount', 'chunkFiles'],
+  properties: {
+    fileCount: { type: 'integer', description: 'total number of paths read from the manifest' },
+    chunkFiles: {
+      type: 'array',
+      description: 'one entry per non-empty chunk list written to disk',
+      items: {
+        type: 'object',
+        required: ['index', 'path', 'count'],
+        properties: {
+          index: { type: 'integer', description: '1-based chunk number' },
+          path: { type: 'string', description: 'relative path to the JSON array of this chunk\'s file paths' },
+          count: { type: 'integer' },
+        },
+      },
+    },
+  },
 }
 
-phase('Plan')
-const chunkSize = Math.ceil(files.length / concurrency)
-const chunks = []
-for (let i = 0; i < files.length; i += chunkSize) chunks.push(files.slice(i, i + chunkSize))
-log(`${files.length} files -> ${chunks.length} chunk(s); ${concurrency} run concurrently; evidence -> ${evidenceDir}/chunk-N.json`)
+const planPrompt = [
+  'You are the PLANNING step of a parallel .NET coverage sweep. You do not classify anything — you only partition a file list. Read-only except for the per-chunk list files named below.',
+  '',
+  `Read the JSON file at \`${filesManifest}\`. It is a JSON array of source file paths to classify.`,
+  `Split that array into ${concurrency} contiguous, roughly-equal chunks (keep neighbouring paths together so a chunk tends to share a folder/service). If there are fewer than ${concurrency} paths, produce one chunk per path; never emit an empty chunk.`,
+  `For each chunk k (1-based), create the directory if needed and write that chunk's paths as a JSON array to \`${evidenceDir}/chunk-k.files.json\` (e.g. \`${evidenceDir}/chunk-1.files.json\`).`,
+  '',
+  `Return { fileCount: <total paths in the manifest>, chunkFiles: [ { index: k, path: "${evidenceDir}/chunk-k.files.json", count: <paths in that chunk> } ... ] }. The counts across chunkFiles MUST sum to fileCount.`,
+  'If the manifest is missing, empty, or not a JSON array, return fileCount: 0 and chunkFiles: [].',
+].join('\n')
+
+const plan = await agent(planPrompt, { label: 'plan', phase: 'Plan', schema: PLAN_RESULT })
+
+if (!plan || !plan.chunkFiles || !plan.chunkFiles.length) {
+  log(`No files to classify — \`${filesManifest}\` is missing, empty, or not a JSON array. Nothing to sweep.`)
+  return { error: 'empty-file-list', filesManifest }
+}
+log(`${plan.fileCount} files -> ${plan.chunkFiles.length} chunk(s); ${concurrency} run concurrently; lists in ${evidenceDir}/chunk-N.files.json; evidence -> ${evidenceDir}/chunk-N.json`)
 
 // Each chunk returns ONLY a compact summary. The full per-file rows are written to disk by the
 // agent (distinct file per chunk -> no write collision). Trivial files (tiny + obviously
@@ -66,10 +104,12 @@ const CHUNK_SUMMARY = {
   },
 }
 
-function classifyPrompt(chunk, i) {
-  const file = `${evidenceDir}/chunk-${i + 1}.json`
+function classifyPrompt(chunkFile) {
+  const file = `${evidenceDir}/chunk-${chunkFile.index}.json`
   return [
-    `You are one chunk (#${i + 1}) of a parallel .NET coverage SWEEP. Classify EVERY file in your chunk against the rubric. Read-only on the production source — your ONLY write is the evidence file named below.`,
+    `You are one chunk (#${chunkFile.index}) of a parallel .NET coverage SWEEP. Classify EVERY file in your chunk against the rubric. Read-only on the production source — your ONLY write is the evidence file named below.`,
+    '',
+    `STEP 0 — get your file list: read the JSON array at \`${chunkFile.path}\` (${chunkFile.count} paths). Those paths ARE your chunk. Classify every one of them.`,
     '',
     'READ EVERY FILE IN FULL. Do not classify by name/folder alone, do not skip small files, do not sample — small files get misclassified too.',
     '',
@@ -80,19 +120,16 @@ function classifyPrompt(chunk, i) {
     '',
     'Mark a file `"trivial": true` when it is tiny (~15 lines or fewer) AND high-confidence excluded — e.g. a DTO/record of auto-properties only, an interface, or an enum with no behavior. These will be collapsed into globs later, so they do NOT need to appear in your returned `attention` list.',
     '',
-    'Your files:',
-    ...chunk.map((f, n) => `  ${n + 1}. ${f}`),
-    '',
     `STEP 1 — write the evidence: create the directory if needed and write ALL your per-file rows as a JSON array to \`${file}\`. Each row: { "path", "classification", "signal", "confidence", "trivial", "carveOutMethods", "notes" }.`,
-    `STEP 2 — return the compact summary ONLY (do NOT put every row in your reply): { chunkIndex: ${i + 1}, evidenceFile: "${file}", fileCount, trivialCount, counts: [{classification,count}...], attention: [ the non-trivial rows that are low-confidence, god-classes, or surprising — with a \`why\` ] }.`,
+    `STEP 2 — return the compact summary ONLY (do NOT put every row in your reply): { chunkIndex: ${chunkFile.index}, evidenceFile: "${file}", fileCount, trivialCount, counts: [{classification,count}...], attention: [ the non-trivial rows that are low-confidence, god-classes, or surprising — with a \`why\` ] }.`,
   ].join('\n')
 }
 
 phase('Classify')
 // Barrier: the main agent needs every chunk's evidence on disk before it can synthesize one
 // coherent manifest and run the single cross-project critique.
-const results = await parallel(chunks.map((chunk, i) => () =>
-  agent(classifyPrompt(chunk, i), { label: `classify:chunk-${i + 1}`, phase: 'Classify', schema: CHUNK_SUMMARY })
+const results = await parallel(plan.chunkFiles.map((chunkFile) => () =>
+  agent(classifyPrompt(chunkFile), { label: `classify:chunk-${chunkFile.index}`, phase: 'Classify', schema: CHUNK_SUMMARY })
 ))
 
 const ok = results.filter(Boolean)
@@ -107,14 +144,14 @@ for (const r of ok) {
 }
 const attention = ok.flatMap(r => r.attention || [])
 
-const missed = files.length - classified
-if (missed !== 0) log(`NOTE: ${classified} of ${files.length} files classified (${missed} unaccounted — a chunk may have failed; re-run or sweep the gap).`)
+const missed = plan.fileCount - classified
+if (missed !== 0) log(`NOTE: ${classified} of ${plan.fileCount} files classified (${missed} unaccounted — a chunk may have failed; re-run or sweep the gap).`)
 log(`Evidence on disk in ${evidenceFiles.length} file(s); ${trivialTotal} trivial files collapsed; ${attention.length} rows flagged for attention.`)
 
 return {
-  filesPlanned: files.length,
+  filesPlanned: plan.fileCount,
   filesClassified: classified,
-  chunks: chunks.length,
+  chunks: plan.chunkFiles.length,
   concurrency,
   evidenceDir,
   evidenceFiles,
