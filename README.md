@@ -2,8 +2,6 @@
 
 A Claude Code plugin marketplace for open-source maintainers — README heroes, README audits, and trustworthy .NET test-coverage backfills.
 
-Featured in [**rohitg00/awesome-claude-code-toolkit**](https://github.com/rohitg00/awesome-claude-code-toolkit) — the curated list of Claude Code plugins, agents, and MCP servers.
-
 ```
 /plugin marketplace add livlign/claude-skills
 ```
@@ -23,6 +21,8 @@ Featured in [**rohitg00/awesome-claude-code-toolkit**](https://github.com/rohitg
 ## `repo-visuals`
 
 Scans the target repo, recommends a format that fits its identity, proposes scenarios, designs a bespoke HTML stage, previews it in your browser, and exports a retina-quality artifact — then optionally opens the upstream PR.
+
+Featured in [**rohitg00/awesome-claude-code-toolkit**](https://github.com/rohitg00/awesome-claude-code-toolkit) — the curated list of Claude Code plugins, agents, and MCP servers.
 
 **What a run looks like:**
 
