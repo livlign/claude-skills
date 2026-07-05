@@ -753,7 +753,7 @@ def main():
     # A method already declared in cannot_test (dead/unreachable/nondeterministic-no-seam) is NOT
     # an in-scope unit gap — it is accounted for in section 6. Leaving it here contradicts §6
     # (e.g. a dead private method with no caller shown as "unit-test it"). Drop it and note how many.
-    hot = [mm for mm in hot_all if mm["name"] not in cannot_test_names]
+    hot = [mm for mm in hot_all if mm["bare"] not in cannot_test_names]
     suppressed_hot = len(hot_all) - len(hot)
     hot.sort(key=lambda x: (bucket_of(x["file"]).startswith("excl:"), -(x["complexity"] * (1.0 - x["line_rate"]))))
     if hot:
