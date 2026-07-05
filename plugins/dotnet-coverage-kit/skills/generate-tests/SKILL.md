@@ -136,10 +136,13 @@ acts; only the latter is a promotion step. So:
   C0/C1 and the **Risk Hotspots** table. This writes a throwaway `REPORT.md` but you do NOT
   write `baseline.recorded_overall` from it — it is a feedback instrument, nothing more.
 - **Read the signal and act:** every **target-layer** (non-`excl:`) row in Risk Hotspots, and
-  every target file below the manifest's diff-coverage branch threshold, is an unfinished
+  every target method with an uncovered branch that is not in `cannot_test`, is an unfinished
   worklist item. Go back and pin inputs for its missing branches (run-capture-fill). Re-measure.
-  Loop until no target-layer method sits below the threshold. This is the part that moves a
-  pass from ~50–60% to 9x% — and it belongs **in the generation loop**, not in a later cleanup.
+  Loop until every target-layer method is either fully branch-covered or its remaining uncovered
+  branches are logged in `cannot_test` — i.e. 100% of the testable set, per the exit gate. (The
+  manifest's diff-coverage branch threshold is a per-PR floor, not the backfill target — do not
+  stop the backfill at it.) This is the part that moves a pass from ~50–60% to full testable
+  coverage — and it belongs **in the generation loop**, not in a later cleanup.
 
 This is explicitly NOT "stopping on a number" — you are not chasing a percentage, you are
 discharging worklist items whose branches the number reveals are still uncovered. The pass is
@@ -215,8 +218,8 @@ applying one standard; it produces findings, it does not silently rewrite tests.
    extract-interface unlocks many), a category dodged wholesale, repeated smells.
 4. **Highest-ROI next moves** — concrete, not vibes.
 5. **In-scope coverage gaps — TARGET layer only (the lens that is easiest to miss).** From the
-   report's **Risk Hotspots** and per-file table, list every **target-layer** method/file whose
-   testable branches fall below the diff-coverage branch threshold — uncovered branches in code we
+   report's **Risk Hotspots** and per-file table, list every **target-layer** method/file with
+   any uncovered testable branch that is not in `cannot_test` — uncovered branches in code we
    OWN. These are NOT `cannot_test` and NOT shallow-assertion cases (item 2 only catches
    covered-but-unasserted lines); they are **unfinished characterization** — a complex method got a
    happy-path test and its other branches (filters, switch arms, error paths) were never executed.
@@ -233,7 +236,8 @@ is the exact failure this item closes.)
 Output: split findings into (a) **clear-cut fixes to apply now**, before baseline — a
 `cannot_test` entry that is actually testable → write the test and remove the entry; **a
 target-layer coverage gap (item 5) → write the missing branch tests (run-capture-fill) until the
-method clears the threshold and drops off Risk Hotspots**; and (b) **judgment calls / larger
+method's testable branches are fully covered (or the unreachable ones are in `cannot_test`) and it
+drops off Risk Hotspots**; and (b) **judgment calls / larger
 refactors** escalated to the human. Apply the clear-cut fixes, then re-check them (loop until none
 remain) — a fix can surface another, e.g. writing the test that retires one `cannot_test` reveals a
 shared seam that retires more. **The baseline does not lock while any target-layer in-scope gap

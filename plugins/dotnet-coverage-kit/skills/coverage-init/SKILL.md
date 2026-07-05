@@ -114,8 +114,8 @@ State the branch and commit you initialized against in the step 11 report, so th
       "go", default `concurrency: 3`.
 
    **Evidence goes to disk, not into context.** Each chunk agent writes ALL its per-file rows
-   `{ path, classification, signal, confidence, trivial, carveOutMethods, notes }` to
-   `coverage/sweep/chunk-N.json`, and returns only a compact summary: counts per classification,
+   `{ path, classification, signal, confidence, trivial, carveOutMethods, methodBreakdown, notes }`
+   to `coverage/sweep/chunk-N.json`, and returns only a compact summary: counts per classification,
    the trivial count, and the rows that need a look (low-confidence, god-classes, surprising).
    `coverage/` is git-ignored (step 8), so this evidence is transient. The sweep is read-only on
    production source and never writes the manifest.
@@ -125,7 +125,13 @@ State the branch and commit you initialized against in the step 11 report, so th
    repo the full set is thousands of rows and lives in those files. Merge it into one coherent
    draft: `category_map` (the target globs), `exclusions` (each non-target classification,
    grouped into patterns with the rubric signal as the reason), and `cannot_test` (the
-   nondeterministic-no-seam files plus recorded carve-outs). **Collapse `trivial` files into
+   nondeterministic-no-seam methods only — each with a `mitigation`). **Carve-outs are NOT
+   `cannot_test` — they are testable methods that stay IN scope.** For every non-target file whose
+   `methodBreakdown` has ≥1 `testable: true` method, append those method names to that pattern's
+   exclusion `reason` in the exact parseable form `CARVE-OUT: MethodA, MethodB` (the gate reads
+   carve-outs from the reason and keeps their lines in scope). Putting a carve-out into
+   `cannot_test` would exclude the very method the backfill must cover — the opposite of the
+   granularity goal. **Collapse `trivial` files into
    glob exclusion patterns by directory** (e.g. `**/Dtos/**` → `dto-no-logic`) instead of one
    row each; emit per-file detail only for non-trivial files. **Normalize across chunks** —
    parallel agents drift in vocabulary (one says `integration-scope`, another `infra`);
