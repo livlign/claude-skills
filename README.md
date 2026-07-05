@@ -1,8 +1,6 @@
 # livlign skills
 
-![livlign/claude-skills — bespoke heroes, honest audits. Two Claude Code plugins for working with GitHub repos: repo-visuals designs README hero visuals, repo-doctor audits READMEs and prescribes fixes.](./assets/hero.gif)
-
-Claude Code plugins for open-source maintainers — designing README heroes, auditing READMEs, and backfilling trustworthy .NET test coverage.
+A Claude Code plugin marketplace for open-source maintainers — README heroes, README audits, and trustworthy .NET test-coverage backfills.
 
 Featured in [**rohitg00/awesome-claude-code-toolkit**](https://github.com/rohitg00/awesome-claude-code-toolkit) — the curated list of Claude Code plugins, agents, and MCP servers.
 
@@ -11,6 +9,37 @@ Featured in [**rohitg00/awesome-claude-code-toolkit**](https://github.com/rohitg
 ```
 
 > Already added the marketplace? Run `/plugin marketplace update livlign` to pick up newly-published plugins (e.g. `dotnet-coverage-kit`) and version bumps.
+
+## Plugins
+
+| Plugin | Install | What it does |
+|---|---|---|
+| [repo-visuals](./plugins/repo-visuals) | `/plugin install repo-visuals@livlign` | Designs bespoke README hero visuals — animated GIF, static PNG, or animated SVG — through a structured discovery dialog. |
+| [repo-doctor](./plugins/repo-doctor) | `/plugin install repo-doctor@livlign` | Audits a repo's README against best-practice patterns and produces a prioritized P0/P1/P2 punch list of fixes. |
+| [dotnet-coverage-kit](./plugins/dotnet-coverage-kit) | `/plugin install dotnet-coverage-kit@livlign` | Backfills characterization + spec unit tests into .NET services and keeps C0/C1 coverage honest via a checked-in manifest and a CI gate. |
+
+---
+
+## `repo-visuals`
+
+Scans the target repo, recommends a format that fits its identity, proposes scenarios, designs a bespoke HTML stage, previews it in your browser, and exports a retina-quality artifact — then optionally opens the upstream PR.
+
+**What a run looks like:**
+
+```
+> /repo-visuals
+  pick mode → semi-auto · scan repo → 30 tools detected
+  recommend → animated GIF, 1200×675 · brief locked
+  build HTML → preview in browser → ship
+  export → hero.gif (2.4 MB) · open PR #42
+```
+
+**Why it's different**
+
+- **Discovery dialog, not templates.** Every hero is bespoke. A structured scan-then-design conversation runs before any HTML is written.
+- **Production-grade by default.** Retina capture, drift-proof copy (no stale star counts or version numbers), preview-vs-export parity, scope-match guardrails — encoded from real maintainer pushback.
+- **Three modes.** Manual, Semi-auto (recommended), Auto.
+- **Optional PR.** Local-only or full upstream PR with relative-path embed, alt-text generation, and fork-and-PR for repos you don't own.
 
 ### Recent heroes shipped
 
@@ -50,39 +79,6 @@ Thumbnails — click through to see the live hero in each repo.
 </table>
 
 [Full showcase →](./plugins/repo-visuals/SHOWCASE.md)
-
----
-
-## Plugins
-
-| Plugin | Install | What it does |
-|---|---|---|
-| [repo-visuals](./plugins/repo-visuals) | `/plugin install repo-visuals@livlign` | Designs bespoke README hero visuals — animated GIF, static PNG, or animated SVG — through a structured discovery dialog. |
-| [repo-doctor](./plugins/repo-doctor) | `/plugin install repo-doctor@livlign` | Audits a repo's README against best-practice patterns and produces a prioritized P0/P1/P2 punch list of fixes. |
-| [dotnet-coverage-kit](./plugins/dotnet-coverage-kit) | `/plugin install dotnet-coverage-kit@livlign` | Backfills characterization + spec unit tests into .NET services and keeps C0/C1 coverage honest via a checked-in manifest and a CI gate. |
-
----
-
-## `repo-visuals`
-
-Scans the target repo, recommends a format that fits its identity, proposes scenarios, designs a bespoke HTML stage, previews it in your browser, and exports a retina-quality artifact — then optionally opens the upstream PR.
-
-**What a run looks like:**
-
-```
-> /repo-visuals
-  pick mode → semi-auto · scan repo → 30 tools detected
-  recommend → animated GIF, 1200×675 · brief locked
-  build HTML → preview in browser → ship
-  export → hero.gif (2.4 MB) · open PR #42
-```
-
-**Why it's different**
-
-- **Discovery dialog, not templates.** Every hero is bespoke. A structured scan-then-design conversation runs before any HTML is written.
-- **Production-grade by default.** Retina capture, drift-proof copy (no stale star counts or version numbers), preview-vs-export parity, scope-match guardrails — encoded from real maintainer pushback.
-- **Three modes.** Manual, Semi-auto (recommended), Auto.
-- **Optional PR.** Local-only or full upstream PR with relative-path embed, alt-text generation, and fork-and-PR for repos you don't own.
 
 [Skill source →](./plugins/repo-visuals)
 
@@ -129,7 +125,7 @@ Backfills unit tests into legacy .NET services and keeps coverage honest. It cla
 
 ## Contributing
 
-Easiest entry points: submit a hero to the [showcase](./plugins/repo-visuals/SHOWCASE.md), report a real failure as an issue, or pick something from the [wishlist](./CONTRIBUTING.md#3-pick-something-from-the-wishlist).
+Easiest entry points: report a real failure as an issue, pick something from the [wishlist](./CONTRIBUTING.md#3-pick-something-from-the-wishlist), or submit a hero to the [showcase](./plugins/repo-visuals/SHOWCASE.md).
 
 Full guide → [CONTRIBUTING.md](./CONTRIBUTING.md)
 
