@@ -64,7 +64,10 @@ cannot_test:
 # into noisy rows. The gate normalizes known aliases, but emit the canonical form.
 #
 # Exclusion categories (whole-file, covered by another test layer or no behavior):
-#   integration-scope · e2e-scope · generated · dto-no-logic · non-product
+#   integration-scope · e2e-scope · generated · dto-no-logic · non-product · mapper-config
+#   (mapper-config = AutoMapper Profile / mapping-config classes: declarative CreateMap only, no
+#    branches today — labeled apart from dto-no-logic so a future conditional MapFrom/ConvertUsing
+#    is not silently hidden under a "data carrier" label. Re-check it if the profile gains logic.)
 #
 # cannot_test categories, by NATURE (the report splits §6 on this):
 #   DESIGN DEBT — fixable by a source change; should trend to zero:

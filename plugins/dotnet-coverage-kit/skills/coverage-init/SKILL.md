@@ -64,11 +64,12 @@ State the branch and commit you initialized against in the step 11 report, so th
 
    | Classification | Objective signal that justifies it |
    |---|---|
-   | `dto-no-logic` | only auto-properties / fields; no method body branches (`if`/`switch`/`?:`/loop); cyclomatic complexity ≈ 1 |
+   | `dto-no-logic` | only auto-properties / fields; no method body branches (`if`/`switch`/`?:`/loop); cyclomatic complexity ≈ 1. **Not** an AutoMapper `Profile`/mapping-config class (those are `mapper-config`, below) |
+   | `mapper-config` | an AutoMapper `Profile` or mapping/DI-config class: declarative `CreateMap`/registration only, no branches today. Labeled distinctly from `dto-no-logic` so a future conditional `MapFrom`/`ConvertUsing` is not silently hidden under a "data carrier" label |
    | `integration-scope` | depends on infrastructure: `DbContext`/repository impl, `HttpClient`, file/network IO, or an external SDK client — used directly, no seam |
    | `e2e-scope` | `ControllerBase`/`[ApiController]`, a hosted/background worker, or a `Program`/startup composition root |
    | `generated` | `[GeneratedCode]` attribute, a `*.g.cs`/`*.Designer.cs` file, or a `Migrations/` path |
-   | `cannot_test: nondeterministic` | direct `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`, `Stopwatch`, `Environment` with **no injected seam** |
+   | `cannot_test: nondeterministic` | a `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`, `Stopwatch`, `Environment` call with no injected seam **whose value flows into observable output** — a return value, an emitted command/document, or persisted state. **Dataflow-blind matching is the classic false positive:** if the only consumer of the value is a logging/telemetry call (`Serilog.Log.*`, `LogContext.PushProperty`, `ILogger`, a `Stopwatch` timing an `elapsed-ms` log line), it is NOT nondeterministic — classify by the method's real behavior instead (usually the mapping → target/carve-out, or `integration-scope` if the body is `DbContext`-bound). A correlation-id/elapsed-ms logged on every handler is a house style, not an untestable seam |
    | target (unit-scope) | ≥1 method whose body branches **and** every dependency is mockable (interface/abstract) — no direct infra/IO/clock/random use |
 
    **The file's classification is a REPORTING label; testability is decided per method.** A
@@ -89,6 +90,17 @@ State the branch and commit you initialized against in the step 11 report, so th
    just the extreme case of this same rule: classify by dominant signal, carve out the pure logic
    (the UserService pattern). A file gets `trivial`/no-carve-out treatment only when it genuinely
    has zero deterministic branching methods.
+
+   **Hard rule — a bare (no-carve-out) exclusion on a LARGE file is not allowed without a
+   method-level re-scan.** A big multi-method service is the likeliest place to under-carve: the
+   file gets judged whole, one `integration-scope` label, and its pure validator/mapper cluster is
+   lost. So for any file above a size/method-count threshold (rule of thumb: >~400 lines OR >~10
+   methods) that you are about to label `integration-scope`/`e2e-scope` with an EMPTY
+   `carveOutMethods`, you MUST first walk its methods and prove each is genuinely IO-bound. A large
+   bare exclusion is a red flag, not a default — the real case (e.g. a 2,400-line preset service
+   hiding `ValidateFileFormat`, `ValidateWidthHeight`, `IsInvalidAssignment`) is that several pure
+   validators were missed. The critique (step 6) treats every large bare exclusion as a lead to
+   re-open.
 
    **Trivial files are marked, not surfaced.** A tiny file (~15 lines or fewer) that is
    high-confidence excluded — a DTO/record of auto-properties only, an interface, an enum with
@@ -197,6 +209,19 @@ State the branch and commit you initialized against in the step 11 report, so th
    - **Missing carve-outs are false exclusions.** For every `integration-scope`/`e2e-scope`
      file, check its per-method breakdown: any deterministic branching method not listed in
      `carveOutMethods` is testable code silently dropped. Add it as a carve-out.
+   - **Dataflow-blind `nondeterministic` is THE recurring false positive — audit it as a
+     population, not row-by-row.** Pull every `nondeterministic` entry at once and check where the
+     flagged `Guid.NewGuid`/`Stopwatch`/`DateTime.Now` value actually goes. If its only consumer
+     is a logging/telemetry call (`Serilog.Log.*`, `LogContext.PushProperty`, `ILogger`, a
+     `Stopwatch` for an elapsed-ms log), the entry is wrong: reclassify to the method's real
+     behavior — `target`/carve-out if the body is a pure mapping, or `integration-scope` if the
+     body is `DbContext`-bound (correctly frozen, but for the wrong reason). This is a house-style
+     pattern (correlation-id + elapsed-ms on every handler), so it clusters — a batch of
+     near-identical handler entries frozen for a logged Guid is the signature. Expect to reclassify
+     most of them.
+   - **Large bare exclusions.** Any `integration-scope`/`e2e-scope` file above ~400 lines / ~10
+     methods with an EMPTY `carveOutMethods` is a lead to re-open — a whole-file judgment likely
+     missed a pure validator/mapper cluster. Re-scan its methods before accepting the bare label.
 
    Reconcile as a loop: apply the clear-cut corrections (signal unambiguously contradicts the
    label) to the draft, then re-check the corrected entries; repeat until no clear-cut mismatch

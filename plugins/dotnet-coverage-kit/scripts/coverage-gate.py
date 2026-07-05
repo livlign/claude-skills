@@ -337,6 +337,7 @@ COVERED_BY = {
     "integration-scope": "integration tests",
     "e2e-scope": "E2E / smoke",
     "dto-no-logic": "— (no behavior)",
+    "mapper-config": "— (declarative mapping config)",
     "generated": "— (generated)",
     "non-product": "— (not shipped)",
     "nondeterministic": "— (frozen)",
