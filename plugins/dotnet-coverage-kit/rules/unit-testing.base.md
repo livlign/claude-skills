@@ -6,6 +6,35 @@ this stack) live in the per-repo overlay `.claude/coverage/refs/unit-testing.md`
 `.claude/coverage/refs/coverage-manifest.yml`. This file never names a specific project,
 namespace, or layer — it refers to roles defined in the manifest.
 
+## "Untestable" is a proven last resort, never an assumption or a shortcut
+
+Marking code untestable (any `exclusions` bucket, or a `cannot_test` entry) removes it from
+the coverage obligation — so it is the path of least resistance to a green gate, and the
+default bias must run the other way. Three rules make this concrete:
+
+1. **The unit of the untestable claim is the METHOD, never the file or folder.** A file, and
+   especially a whole folder (`Controllers/`, `**/Api/**`, an "Infrastructure" project), is
+   almost never uniformly untestable — a controller action validates and branches before it
+   delegates; an IO orchestrator has pure mapping/decision methods between its calls. Classify
+   the file by its dominant signal for reporting, but every deterministic branching method it
+   contains is a **carve-out** that stays in scope. A file-level or folder-level exclusion may
+   never silently swallow a testable method.
+
+2. **A signal is a reason to look, not a verdict.** "Uses `HttpClient`", "reads `DateTime.Now`",
+   "is a controller" are triggers to inspect, not conclusions. Confirm the untestable condition
+   actually holds — the dependency has no injected seam (not merely that infra is *mentioned*),
+   the nondeterministic value actually flows into the output you would assert (not just that the
+   type appears in the file). When the honest answer to "could a competent engineer test this
+   without changing source?" is yes or maybe, it is testable — classify it as target and let the
+   run-capture-fill loop prove it, rather than pre-declaring it untestable to save a cycle.
+
+3. **Every untestable claim carries its evidence and its exit.** An exclusion/`cannot_test`
+   entry states the objective signal that justifies it (cited at `file:line`) and — for
+   `cannot_test` — a **mitigation**: the specific source change that would make it testable
+   (extract `IClock`, inject the repository interface, move the pure slice out), or an explicit
+   "none — genuinely nondeterministic external boundary" when nothing would. `cannot_test` is
+   tracked debt with a way out, not a permanent exemption.
+
 ## Two modes
 
 Every test is written in exactly one of two modes. The mode is decided by what is
@@ -36,11 +65,19 @@ The required loop for each characterization test:
 4. Write that actual value into the assertion.
 5. Re-run until green.
 
-If the test cannot be executed (does not compile in isolation, requires real
-infrastructure, depends on non-deterministic runtime state), it does NOT get a
-predicted assertion. It goes to the cannot-test log in the manifest with a reason.
-A predicted value that happens to pass is worse than a logged exclusion: it freezes a
-number that was never the real output, silently.
+If the test genuinely cannot be executed (requires real infrastructure with no seam,
+depends on non-deterministic runtime state that flows into the asserted output), it does
+NOT get a predicted assertion. It goes to the cannot-test log in the manifest with a reason
+**and a mitigation** (see the untestable-is-a-last-resort rule above). A predicted value that
+happens to pass is worse than a logged exclusion: it freezes a number that was never the real
+output, silently.
+
+**A test that does not compile is not evidence of untestable code.** A compile failure is
+almost always a test-authoring problem — a wrong mock setup, a missing reference the test
+project legitimately should carry, a constructor argument not yet stubbed. Fix the authoring
+problem and run the test. Only route to `cannot_test` when the unit genuinely cannot be
+constructed or exercised through any interface *after* the authoring causes are ruled out —
+never on the first red build.
 
 Spec tests do not use this loop — their expected values come from the spec.
 

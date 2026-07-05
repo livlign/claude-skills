@@ -119,7 +119,7 @@ const PHASES=[
           "<b>dto-no-logic</b> — only auto-properties / fields; no method body branches (complexity ≈ 1).",
           "<b>generated</b> — <code>[GeneratedCode]</code>, a <code>*.g.cs</code>/<code>*.Designer.cs</code> file, or a <code>Migrations/</code> path.",
           "<b>cannot_test (nondeterministic)</b> — direct <code>DateTime.Now</code>/<code>Guid.NewGuid</code>/<code>Random</code> with no injected seam.",
-          "God-classes (large IO orchestration) are classified <code>integration-scope</code> with their thin pure-logic slice noted as carve-out methods."]},
+          "Testability is per-method, not per-file: any excluded file — god-class, Controller, Api, Infrastructure — has its deterministic branching methods noted as carve-outs that stay in scope, and reports the split line-by-line (lines 40–58 testable · 60–95 not)."]},
         {title:"Self-critique loop — refine until clean",loop:"draft  ⇄  critique  →  refine",points:[
           "Re-checks every label against the rubric, citing the signal at file:line.",
           "Hunts false exclusions (testable code skipped) and false inclusions (untestable code kept).",
@@ -130,7 +130,7 @@ const PHASES=[
   tagline:"Cover the whole worklist: characterization for existing code, spec for new code.",
   how:["<b>Characterization</b> for old code — run it, pin the real value (run-capture-fill).",
        "<b>Spec</b> for new/changed code — assert what it should do.",
-       "Untestable units → <code>cannot_test</code> with a reason; source is never edited.",
+       "Exits at 100% of the testable set's branches; the only residual is <code>cannot_test</code> — per method, with a reason and a mitigation (the seam that unlocks it). Source is never edited.",
        "Optionally fan the backfill out across agents you choose.",
        "Suite self-critique loop runs before the baseline locks in."],
   why:["A safety net so future changes can't silently break behavior.",

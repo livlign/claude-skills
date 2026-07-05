@@ -64,17 +64,43 @@ State the branch and commit you initialized against in the step 11 report, so th
 
    | Classification | Objective signal that justifies it |
    |---|---|
-   | `dto-no-logic` | only auto-properties / fields; no method body branches (`if`/`switch`/`?:`/loop); cyclomatic complexity ≈ 1 |
+   | `dto-no-logic` | only auto-properties / fields; no method body branches (`if`/`switch`/`?:`/loop); cyclomatic complexity ≈ 1. **Not** an AutoMapper `Profile`/mapping-config class (those are `mapper-config`, below) |
+   | `mapper-config` | an AutoMapper `Profile` or mapping/DI-config class: declarative `CreateMap`/registration only, no branches today. Labeled distinctly from `dto-no-logic` so a future conditional `MapFrom`/`ConvertUsing` is not silently hidden under a "data carrier" label |
    | `integration-scope` | depends on infrastructure: `DbContext`/repository impl, `HttpClient`, file/network IO, or an external SDK client — used directly, no seam |
    | `e2e-scope` | `ControllerBase`/`[ApiController]`, a hosted/background worker, or a `Program`/startup composition root |
    | `generated` | `[GeneratedCode]` attribute, a `*.g.cs`/`*.Designer.cs` file, or a `Migrations/` path |
-   | `cannot_test: nondeterministic` | direct `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`, `Stopwatch`, `Environment` with **no injected seam** |
+   | `cannot_test: nondeterministic` | a `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`, `Stopwatch`, `Environment` call with no injected seam **whose value flows into observable output** — a return value, an emitted command/document, or persisted state. **Dataflow-blind matching is the classic false positive:** if the only consumer of the value is a logging/telemetry call (`Serilog.Log.*`, `LogContext.PushProperty`, `ILogger`, a `Stopwatch` timing an `elapsed-ms` log line), it is NOT nondeterministic — classify by the method's real behavior instead (usually the mapping → target/carve-out, or `integration-scope` if the body is `DbContext`-bound). A correlation-id/elapsed-ms logged on every handler is a house style, not an untestable seam |
    | target (unit-scope) | ≥1 method whose body branches **and** every dependency is mockable (interface/abstract) — no direct infra/IO/clock/random use |
 
-   **God-class files** (large or dependency-heavy — e.g. >~300 lines or many injected
-   collaborators) are never skipped or special-cased away: classify the file by its dominant
-   signal (usually `integration-scope` for IO orchestration) and record the thin pure-logic
-   slice as **carve-out methods** so the backfill still covers them (the UserService pattern).
+   **The file's classification is a REPORTING label; testability is decided per method.** A
+   non-trivial file is rarely uniformly testable or untestable — the classification is its
+   dominant signal, but the sweep must also record, for each non-trivial file, a **per-method
+   breakdown**: `{ method, lines, testable, reason }` (e.g. `MapResult` lines 40–58 testable;
+   `FetchRaw` lines 60–95 not testable — direct `HttpClient`, no seam). This is what turns
+   "this file is untestable" into "lines 40–58 testable, lines 60–95 not testable because …".
+   Every method marked `testable: true` in a file that carries a non-target classification is a
+   **carve-out** and MUST be listed in `carveOutMethods` so the backfill covers it.
+
+   **This applies to whole folders that "look" untestable, not just god-classes.**
+   `Controllers/`, `**/Api/**`, and `*.Infrastructure` projects are the classic trap: they get a
+   blanket `e2e-scope`/`integration-scope` label, yet controller actions validate and branch
+   before delegating, and IO orchestrators have pure mapping/decision methods between their
+   calls. Read them for their carve-outs — do not let a folder-level verdict swallow the testable
+   slice. A `god-class` (large or dependency-heavy, >~300 lines or many injected collaborators) is
+   just the extreme case of this same rule: classify by dominant signal, carve out the pure logic
+   (the UserService pattern). A file gets `trivial`/no-carve-out treatment only when it genuinely
+   has zero deterministic branching methods.
+
+   **Hard rule — a bare (no-carve-out) exclusion on a LARGE file is not allowed without a
+   method-level re-scan.** A big multi-method service is the likeliest place to under-carve: the
+   file gets judged whole, one `integration-scope` label, and its pure validator/mapper cluster is
+   lost. So for any file above a size/method-count threshold (rule of thumb: >~400 lines OR >~10
+   methods) that you are about to label `integration-scope`/`e2e-scope` with an EMPTY
+   `carveOutMethods`, you MUST first walk its methods and prove each is genuinely IO-bound. A large
+   bare exclusion is a red flag, not a default — the real case (e.g. a 2,400-line preset service
+   hiding `ValidateFileFormat`, `ValidateWidthHeight`, `IsInvalidAssignment`) is that several pure
+   validators were missed. The critique (step 6) treats every large bare exclusion as a lead to
+   re-open.
 
    **Trivial files are marked, not surfaced.** A tiny file (~15 lines or fewer) that is
    high-confidence excluded — a DTO/record of auto-properties only, an interface, an enum with
@@ -100,8 +126,8 @@ State the branch and commit you initialized against in the step 11 report, so th
       "go", default `concurrency: 3`.
 
    **Evidence goes to disk, not into context.** Each chunk agent writes ALL its per-file rows
-   `{ path, classification, signal, confidence, trivial, carveOutMethods, notes }` to
-   `coverage/sweep/chunk-N.json`, and returns only a compact summary: counts per classification,
+   `{ path, classification, signal, confidence, trivial, carveOutMethods, methodBreakdown, notes }`
+   to `coverage/sweep/chunk-N.json`, and returns only a compact summary: counts per classification,
    the trivial count, and the rows that need a look (low-confidence, god-classes, surprising).
    `coverage/` is git-ignored (step 8), so this evidence is transient. The sweep is read-only on
    production source and never writes the manifest.
@@ -111,7 +137,13 @@ State the branch and commit you initialized against in the step 11 report, so th
    repo the full set is thousands of rows and lives in those files. Merge it into one coherent
    draft: `category_map` (the target globs), `exclusions` (each non-target classification,
    grouped into patterns with the rubric signal as the reason), and `cannot_test` (the
-   nondeterministic-no-seam files plus recorded carve-outs). **Collapse `trivial` files into
+   nondeterministic-no-seam methods only — each with a `mitigation`). **Carve-outs are NOT
+   `cannot_test` — they are testable methods that stay IN scope.** For every non-target file whose
+   `methodBreakdown` has ≥1 `testable: true` method, append those method names to that pattern's
+   exclusion `reason` in the exact parseable form `CARVE-OUT: MethodA, MethodB` (the gate reads
+   carve-outs from the reason and keeps their lines in scope). Putting a carve-out into
+   `cannot_test` would exclude the very method the backfill must cover — the opposite of the
+   granularity goal. **Collapse `trivial` files into
    glob exclusion patterns by directory** (e.g. `**/Dtos/**` → `dto-no-logic`) instead of one
    row each; emit per-file detail only for non-trivial files. **Normalize across chunks** —
    parallel agents drift in vocabulary (one says `integration-scope`, another `infra`);
@@ -166,6 +198,30 @@ State the branch and commit you initialized against in the step 11 report, so th
    - **Classic traps (signal hiding under a misleading name):** DTOs with validation/computed
      members; "infrastructure"-named pure logic; mappers with conditional logic; enums with
      behavior.
+   - **Verify NEGATIVE citations against source — the sweep's `attention` list cannot catch
+     these.** A confidently-wrong exclusion rests on a negative claim ("auto-properties only",
+     "no seam", "no branches") that is high-confidence, so it never appears in `attention`, and
+     reading only the evidence rows cannot reveal that the claim itself is false. Sample the
+     high-confidence exclusions per bucket and per project and open the actual file to confirm
+     the negative claim holds (no `if`/`switch`/`?:`/loop; the collaborator really is not an
+     injected interface). One wrong negative claim, repeated across a project by pattern, is the
+     largest silent false-exclusion — spend the reads here, not on the already-flagged rows.
+   - **Missing carve-outs are false exclusions.** For every `integration-scope`/`e2e-scope`
+     file, check its per-method breakdown: any deterministic branching method not listed in
+     `carveOutMethods` is testable code silently dropped. Add it as a carve-out.
+   - **Dataflow-blind `nondeterministic` is THE recurring false positive — audit it as a
+     population, not row-by-row.** Pull every `nondeterministic` entry at once and check where the
+     flagged `Guid.NewGuid`/`Stopwatch`/`DateTime.Now` value actually goes. If its only consumer
+     is a logging/telemetry call (`Serilog.Log.*`, `LogContext.PushProperty`, `ILogger`, a
+     `Stopwatch` for an elapsed-ms log), the entry is wrong: reclassify to the method's real
+     behavior — `target`/carve-out if the body is a pure mapping, or `integration-scope` if the
+     body is `DbContext`-bound (correctly frozen, but for the wrong reason). This is a house-style
+     pattern (correlation-id + elapsed-ms on every handler), so it clusters — a batch of
+     near-identical handler entries frozen for a logged Guid is the signature. Expect to reclassify
+     most of them.
+   - **Large bare exclusions.** Any `integration-scope`/`e2e-scope` file above ~400 lines / ~10
+     methods with an EMPTY `carveOutMethods` is a lead to re-open — a whole-file judgment likely
+     missed a pure validator/mapper cluster. Re-scan its methods before accepting the bare label.
 
    Reconcile as a loop: apply the clear-cut corrections (signal unambiguously contradicts the
    label) to the draft, then re-check the corrected entries; repeat until no clear-cut mismatch
@@ -238,7 +294,27 @@ State the branch and commit you initialized against in the step 11 report, so th
    Tell the user to add an import of `.claude/coverage/refs/unit-testing.md` to the repo's
    `CLAUDE.md` so the convention is in context while writing tests.
 
-11. **Report the draft and stop.** Show the proposed category_map and exclusions with a
+11. **Comprehensiveness gate — do not report or stop until the scan is provably complete.**
+   The point of stopping is to hand a human a *trustworthy, complete* draft; a report over a
+   partial or unreconciled scan is worse than no report. Before writing the step-11 report,
+   assert ALL of the following, and if any fails, fix it and re-check — do not proceed:
+   - **Every enumerated file is accounted for.** `filesClassified == filesPlanned` from the
+     sweep result (0 unaccounted). If a chunk failed and files are missing, re-sweep the gap —
+     do not report over a hole. The workflow returns this; act on it, never just note it.
+   - **The enumeration itself was complete.** The swept set covers all instrumented production
+     source — no source directory silently omitted from `files.json`. Cross-check the enumerated
+     paths against the project/folder inventory from step 2; a whole folder missing from the
+     sweep is the same failure as a folder blanket-excluded.
+   - **No testable method was swallowed.** Every `integration-scope`/`e2e-scope` file with a
+     deterministic branching method has that method recorded as a carve-out (the step-6 check
+     passed for all such files, not a sample).
+   - **The critique loop has settled.** No clear-cut mismatch remains; only genuine gray-zone
+     questions are left, and those are carried into the report as explicit questions.
+
+   State in the report that this gate passed, with the file counts. Only genuine ambiguity is
+   deferred to the human — incompleteness is not.
+
+   **Report the draft and stop.** Show the proposed category_map and exclusions with a
    one-line rationale each, the detected test-project reference boundary, and the
    critique findings — split into corrections already applied and open questions the
    human must decide. Ask the user to confirm or correct the category_map and exclusions

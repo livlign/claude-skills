@@ -26,13 +26,20 @@ category_map:
 
 # Patterns whose uncovered state is intentional. Each needs a category and a reason.
 # Reasons are reproduced verbatim in every report, so the report needs no AI to explain.
+#
+# CARVE-OUTS: a file-level exclusion is a REPORTING label, not a claim that the whole file
+# is untestable. When an excluded file (integration-scope orchestrator, e2e-scope controller,
+# etc.) still contains deterministic branching methods, list them in the reason as
+# `CARVE-OUT: MethodA, MethodB` — the gate keeps those methods IN scope and the backfill must
+# cover them. This is how a Controller/Api/Infrastructure file contributes its testable slice
+# instead of vanishing wholesale. Omitting a real carve-out is a false exclusion.
 exclusions:
   - pattern: "**/*.Infrastructure/**"
     category: integration-scope
-    reason: "Persistence/external-IO; covered by integration tests, not unit scope"
+    reason: "Persistence/external-IO; covered by integration tests, not unit scope. CARVE-OUT: <pure/decision methods, if any>"
   - pattern: "**/*Controller.cs"
     category: e2e-scope
-    reason: "Thin transport wrapper; covered by E2E"
+    reason: "Transport wrapper; covered by E2E. CARVE-OUT: <action-level validation/branching, if any>"
   - pattern: "**/Migrations/**"
     category: generated
     reason: "EF migrations are generated, not hand-written logic"
@@ -42,11 +49,33 @@ exclusions:
 
 # Specific targets that cannot be unit-tested as-is. Populated by generate-tests when a
 # unit fails the run-capture-fill precondition during the backfill. No source change is
-# made to fix these during backfill.
+# made to fix these during backfill. Scoped to the METHOD, never a whole file/folder.
+# Each entry is tracked debt with a way out — `mitigation` is required.
 cannot_test:
-  - target: ""        # e.g. "OrderService.ScheduleRetry"
+  - target: ""        # e.g. "OrderService.ScheduleRetry" — a specific method, not a file
     category: nondeterministic
+    lines: ""         # optional, informational — e.g. "60-95"; the gate keys off the method name
     reason: ""        # e.g. "Reads DateTime.UtcNow directly; no clock seam, source frozen at baseline"
+    mitigation: ""    # REQUIRED — the source change that unlocks it, e.g. "Inject IClock and read _clock.UtcNow",
+                      # or "none — genuinely nondeterministic external boundary" when nothing would
 
-# Allowed categories (extend as the pilot surfaces new ones):
-#   integration-scope, e2e-scope, generated, dto-no-logic, nondeterministic
+# Canonical categories — use these exact spellings (hyphens, lower-case). The report groups by
+# category, so drift like `framework_mismatch` vs `framework-incompatible` splits one real concept
+# into noisy rows. The gate normalizes known aliases, but emit the canonical form.
+#
+# Exclusion categories (whole-file, covered by another test layer or no behavior):
+#   integration-scope · e2e-scope · generated · dto-no-logic · non-product · mapper-config
+#   (mapper-config = AutoMapper Profile / mapping-config classes: declarative CreateMap only, no
+#    branches today — labeled apart from dto-no-logic so a future conditional MapFrom/ConvertUsing
+#    is not silently hidden under a "data carrier" label. Re-check it if the profile gains logic.)
+#
+# cannot_test categories, by NATURE (the report splits §6 on this):
+#   DESIGN DEBT — fixable by a source change; should trend to zero:
+#     nondeterministic         — clock/id/random/IO flows into the asserted output, no seam
+#     requires-source-change   — needs a seam / InternalsVisibleTo / extracted interface to test
+#   STRUCTURAL — not debt, will NOT trend to zero (audit once, then leave):
+#     unreachable-branch       — compiler-lowered/provably-unreachable branch (C1 artifact)
+#     unreachable              — dead statement/path not reachable from any unit entry
+#     dead-code                — method with no caller anywhere
+#     method-absent            — stale entry; the method no longer exists (remove it)
+#     framework-mismatch       — owning project targets a framework the test project can't reference
