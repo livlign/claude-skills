@@ -116,11 +116,14 @@ function classifyPrompt(chunkFile) {
     'Classification rubric — each classification is justified by an OBJECTIVE signal in the source, cited at file:line:',
     rubric,
     '',
-    'For god-class files (large or dependency-heavy, e.g. >~300 lines or many injected collaborators): classify by the dominant signal (usually integration-scope for IO orchestration) AND list the thin pure-logic methods in carveOutMethods.',
+    'TESTABILITY IS PER METHOD, NOT PER FILE. The classification is the file\'s DOMINANT signal for reporting; it is not a claim that the whole file is untestable. For every non-trivial file, also produce a `methodBreakdown`: for each method, { "method", "lines" (e.g. "40-58"), "testable" (bool), "reason" }. A method is testable when its body branches AND its dependencies are mockable/deterministic; untestable only when a specific signal holds (direct infra/IO with no seam, nondeterminism flowing into output). This is what lets a report say "lines 40-58 testable, lines 60-95 not testable because X" instead of a blanket file verdict.',
     '',
-    'Mark a file `"trivial": true` when it is tiny (~15 lines or fewer) AND high-confidence excluded — e.g. a DTO/record of auto-properties only, an interface, or an enum with no behavior. These will be collapsed into globs later, so they do NOT need to appear in your returned `attention` list.',
+    'This applies to whole folders that LOOK untestable, not just god-classes. Controllers (`Controllers/`, `**/Api/**`, ControllerBase/[ApiController]) and Infrastructure projects get a blanket e2e/integration label, but controller actions validate and branch before delegating, and IO orchestrators have pure mapping/decision methods between their calls. READ them for their testable methods. For god-class files (large or dependency-heavy, e.g. >~300 lines or many injected collaborators): same rule, extreme case — classify by dominant signal AND list every deterministic branching method in carveOutMethods.',
+    'HARD RULE: every method you mark `testable: true` in a file whose classification is NOT the unit-scope target MUST also appear in `carveOutMethods`. A file/folder-level exclusion may never silently swallow a testable method.',
     '',
-    `STEP 1 — write the evidence: create the directory if needed and write ALL your per-file rows as a JSON array to \`${file}\`. Each row: { "path", "classification", "signal", "confidence", "trivial", "carveOutMethods", "notes" }.`,
+    'Mark a file `"trivial": true` when it is tiny (~15 lines or fewer) AND high-confidence excluded — e.g. a DTO/record of auto-properties only, an interface, or an enum with no behavior. Trivial requires ZERO deterministic branching methods; if it has any, it is not trivial. Trivial files will be collapsed into globs later, so they do NOT need to appear in your returned `attention` list or carry a methodBreakdown.',
+    '',
+    `STEP 1 — write the evidence: create the directory if needed and write ALL your per-file rows as a JSON array to \`${file}\`. Each row: { "path", "classification", "signal", "confidence", "trivial", "carveOutMethods", "methodBreakdown", "notes" }.`,
     `STEP 2 — return the compact summary ONLY (do NOT put every row in your reply): { chunkIndex: ${chunkFile.index}, evidenceFile: "${file}", fileCount, trivialCount, counts: [{classification,count}...], attention: [ the non-trivial rows that are low-confidence, god-classes, or surprising — with a \`why\` ] }.`,
   ].join('\n')
 }
@@ -145,10 +148,16 @@ for (const r of ok) {
 const attention = ok.flatMap(r => r.attention || [])
 
 const missed = plan.fileCount - classified
-if (missed !== 0) log(`NOTE: ${classified} of ${plan.fileCount} files classified (${missed} unaccounted — a chunk may have failed; re-run or sweep the gap).`)
+const complete = missed === 0
+if (!complete) log(`INCOMPLETE: ${classified} of ${plan.fileCount} files classified (${missed} unaccounted — a chunk likely failed). The coverage-init comprehensiveness gate must NOT proceed: re-sweep the gap before reporting.`)
 log(`Evidence on disk in ${evidenceFiles.length} file(s); ${trivialTotal} trivial files collapsed; ${attention.length} rows flagged for attention.`)
 
 return {
+  // `complete` is the sweep's contribution to the coverage-init comprehensiveness gate: false
+  // means files went unclassified (a chunk failed) and init must re-sweep the gap, not report
+  // over the hole. filesPlanned/filesClassified let the caller assert 0 unaccounted.
+  complete,
+  unaccounted: missed,
   filesPlanned: plan.fileCount,
   filesClassified: classified,
   chunks: plan.chunkFiles.length,

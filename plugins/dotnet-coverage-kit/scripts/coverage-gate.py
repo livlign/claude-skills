@@ -745,19 +745,23 @@ def main():
 
     # 6. Not Testable
     out.append("\n## 6. Not Testable (design findings — should trend to zero)")
-    out.append("_Anything here that is genuinely target logic is a refactor candidate, not an exemption._")
-    out.append("| Class / Method | Why not unit-testable | Category | Action |")
-    out.append("|----------------|----------------------|----------|--------|")
+    out.append("_Anything here that is genuinely target logic is a refactor candidate, not an exemption. "
+               "Each entry is scoped to a method and carries a mitigation — the way out, not a permanent exemption._")
+    out.append("| Class / Method | Where | Why not unit-testable | Category | Mitigation |")
+    out.append("|----------------|-------|----------------------|----------|------------|")
+    def clip(s, n=110):
+        s = (s or "").replace("\n", " ")
+        return s[:n - 3] + "…" if len(s) > n else s
     if cannot_test:
         for ct in cannot_test:
-            reason = (ct.get("reason", "") or "").replace("\n", " ")
-            if len(reason) > 110:
-                reason = reason[:107] + "…"
             cat = ct.get("category", "—")
-            out.append("| `%s` | %s | %s | %s |"
-                       % (ct.get("target", "—"), reason, cat, ACTION.get(cat, "Review")))
+            lines = ct.get("lines") or "—"
+            # Prefer the entry's own mitigation; fall back to the per-category default action.
+            mitigation = clip(ct.get("mitigation")) or ACTION.get(cat, "Review")
+            out.append("| `%s` | %s | %s | %s | %s |"
+                       % (ct.get("target", "—"), lines, clip(ct.get("reason", "")), cat, mitigation))
     else:
-        out.append("| — | — | — | none recorded |")
+        out.append("| — | — | — | — | none recorded |")
 
     out.append("\n---")
     out.append("_Full per-file drill-down: `coverage/html/summary.html` · exclusion reasons & cannot_test: `.claude/coverage/refs/coverage-manifest.yml`_")

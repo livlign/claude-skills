@@ -71,10 +71,24 @@ State the branch and commit you initialized against in the step 11 report, so th
    | `cannot_test: nondeterministic` | direct `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`, `Stopwatch`, `Environment` with **no injected seam** |
    | target (unit-scope) | ≥1 method whose body branches **and** every dependency is mockable (interface/abstract) — no direct infra/IO/clock/random use |
 
-   **God-class files** (large or dependency-heavy — e.g. >~300 lines or many injected
-   collaborators) are never skipped or special-cased away: classify the file by its dominant
-   signal (usually `integration-scope` for IO orchestration) and record the thin pure-logic
-   slice as **carve-out methods** so the backfill still covers them (the UserService pattern).
+   **The file's classification is a REPORTING label; testability is decided per method.** A
+   non-trivial file is rarely uniformly testable or untestable — the classification is its
+   dominant signal, but the sweep must also record, for each non-trivial file, a **per-method
+   breakdown**: `{ method, lines, testable, reason }` (e.g. `MapResult` lines 40–58 testable;
+   `FetchRaw` lines 60–95 not testable — direct `HttpClient`, no seam). This is what turns
+   "this file is untestable" into "lines 40–58 testable, lines 60–95 not testable because …".
+   Every method marked `testable: true` in a file that carries a non-target classification is a
+   **carve-out** and MUST be listed in `carveOutMethods` so the backfill covers it.
+
+   **This applies to whole folders that "look" untestable, not just god-classes.**
+   `Controllers/`, `**/Api/**`, and `*.Infrastructure` projects are the classic trap: they get a
+   blanket `e2e-scope`/`integration-scope` label, yet controller actions validate and branch
+   before delegating, and IO orchestrators have pure mapping/decision methods between their
+   calls. Read them for their carve-outs — do not let a folder-level verdict swallow the testable
+   slice. A `god-class` (large or dependency-heavy, >~300 lines or many injected collaborators) is
+   just the extreme case of this same rule: classify by dominant signal, carve out the pure logic
+   (the UserService pattern). A file gets `trivial`/no-carve-out treatment only when it genuinely
+   has zero deterministic branching methods.
 
    **Trivial files are marked, not surfaced.** A tiny file (~15 lines or fewer) that is
    high-confidence excluded — a DTO/record of auto-properties only, an interface, an enum with
@@ -166,6 +180,17 @@ State the branch and commit you initialized against in the step 11 report, so th
    - **Classic traps (signal hiding under a misleading name):** DTOs with validation/computed
      members; "infrastructure"-named pure logic; mappers with conditional logic; enums with
      behavior.
+   - **Verify NEGATIVE citations against source — the sweep's `attention` list cannot catch
+     these.** A confidently-wrong exclusion rests on a negative claim ("auto-properties only",
+     "no seam", "no branches") that is high-confidence, so it never appears in `attention`, and
+     reading only the evidence rows cannot reveal that the claim itself is false. Sample the
+     high-confidence exclusions per bucket and per project and open the actual file to confirm
+     the negative claim holds (no `if`/`switch`/`?:`/loop; the collaborator really is not an
+     injected interface). One wrong negative claim, repeated across a project by pattern, is the
+     largest silent false-exclusion — spend the reads here, not on the already-flagged rows.
+   - **Missing carve-outs are false exclusions.** For every `integration-scope`/`e2e-scope`
+     file, check its per-method breakdown: any deterministic branching method not listed in
+     `carveOutMethods` is testable code silently dropped. Add it as a carve-out.
 
    Reconcile as a loop: apply the clear-cut corrections (signal unambiguously contradicts the
    label) to the draft, then re-check the corrected entries; repeat until no clear-cut mismatch
@@ -238,7 +263,27 @@ State the branch and commit you initialized against in the step 11 report, so th
    Tell the user to add an import of `.claude/coverage/refs/unit-testing.md` to the repo's
    `CLAUDE.md` so the convention is in context while writing tests.
 
-11. **Report the draft and stop.** Show the proposed category_map and exclusions with a
+11. **Comprehensiveness gate — do not report or stop until the scan is provably complete.**
+   The point of stopping is to hand a human a *trustworthy, complete* draft; a report over a
+   partial or unreconciled scan is worse than no report. Before writing the step-11 report,
+   assert ALL of the following, and if any fails, fix it and re-check — do not proceed:
+   - **Every enumerated file is accounted for.** `filesClassified == filesPlanned` from the
+     sweep result (0 unaccounted). If a chunk failed and files are missing, re-sweep the gap —
+     do not report over a hole. The workflow returns this; act on it, never just note it.
+   - **The enumeration itself was complete.** The swept set covers all instrumented production
+     source — no source directory silently omitted from `files.json`. Cross-check the enumerated
+     paths against the project/folder inventory from step 2; a whole folder missing from the
+     sweep is the same failure as a folder blanket-excluded.
+   - **No testable method was swallowed.** Every `integration-scope`/`e2e-scope` file with a
+     deterministic branching method has that method recorded as a carve-out (the step-6 check
+     passed for all such files, not a sample).
+   - **The critique loop has settled.** No clear-cut mismatch remains; only genuine gray-zone
+     questions are left, and those are carried into the report as explicit questions.
+
+   State in the report that this gate passed, with the file counts. Only genuine ambiguity is
+   deferred to the human — incompleteness is not.
+
+   **Report the draft and stop.** Show the proposed category_map and exclusions with a
    one-line rationale each, the detected test-project reference boundary, and the
    critique findings — split into corrections already applied and open questions the
    human must decide. Ask the user to confirm or correct the category_map and exclusions

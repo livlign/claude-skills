@@ -72,7 +72,7 @@ coverage is two-pass throughout — **Adjusted** (target set, the headline + rat
                        integration test/extract carve-out; e2e=E2E/refactor) and a takeaway line
                        calling out how many are real in-scope unit gaps
 ## 5. Excluded Code    manifest exclusions grouped by category — mechanism = "manifest pattern"
-## 6. Not Testable     cannot_test entries: target · why · category · action
+## 6. Not Testable     cannot_test entries: target · where (lines) · why · category · mitigation
 ## Observations        (appended by the model) frozen latent-bug notes, if any
 ```
 

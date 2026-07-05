@@ -68,10 +68,27 @@ at once. The efficiency rules apply **whichever way you run** — sequential or 
    one test per method** — build once, run the class once, capture *all* actual values from that
    single run, then fill. The economy is in batching the build/run, not in writing fewer tests:
    never pay a build/run cycle per method, and never trade away branch coverage to save cycles.
-2. **Pre-triage before the loop, using the init signals.** Before the write-build-run loop, scan
-   each unit for an untestable signal (direct `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`
-   with no seam; works only against real infra/IO). Route those straight to `cannot_test` — do
-   not spend a full cycle discovering it.
+2. **Pre-triage narrows the assertion, it does not discard the unit.** Before the
+   write-build-run loop, scan each unit for an untestable signal (`DateTime.Now`/`UtcNow`,
+   `Guid.NewGuid`, `Random`, direct infra/IO). A signal is a reason to look, not a verdict — a
+   whole method is `cannot_test` only when the untestable condition is *confirmed*, not merely
+   present:
+   - **Confirm "no seam."** Is the dependency really un-mockable? A collaborator injected as an
+     interface/abstract, an `IHttpClientFactory`, an optional `Func<DateTime>` — these are seams.
+     Route to `cannot_test` only when the nondeterministic/infra call is made directly with no
+     injectable seam.
+   - **Confirm the nondeterminism reaches the assertion.** A method that logs `DateTime.Now` but
+     returns a deterministic result is fully testable — assert the result. Only when the
+     nondeterministic value flows into the output you would assert (and cannot be pinned) does
+     that assertion drop.
+   - **Still cover the deterministic branches.** A method with a `Guid.NewGuid()` id and three
+     validation branches gets tests for the three branches (assert everything except the id, or
+     assert the id is non-empty). `cannot_test` scopes to the specific method/assertion that is
+     genuinely blocked — never the surrounding testable logic.
+
+   When in doubt, run the loop — let run-capture-fill prove testability rather than pre-declaring
+   it away to save a cycle. Every `cannot_test` entry you do record carries a **mitigation** (the
+   seam that would unlock it), per the base rule.
 3. **Pattern-replicate across siblings.** Legacy services are full of structurally identical
    units (handlers, validators, mappers). Solve the seam/mock setup once on a representative,
    then replicate the shape across the lookalikes. A "phase 0" that builds the shared
@@ -128,11 +145,37 @@ This is explicitly NOT "stopping on a number" — you are not chasing a percenta
 discharging worklist items whose branches the number reveals are still uncovered. The pass is
 done when that list is empty, whatever the resulting percentage happens to be.
 
-## Promotion gate — set the baseline and commit only when the worklist is exhausted
+## Exit gate — the testable set is 100% branch-covered; the only residual is documented `cannot_test`
+
+The backfill exits ONLY when the entire testable set is covered — not "most", not "the priority
+files", 100% of it. The testable set is: every target unit-scope method + every carve-out method
+(the pure/branching slices of excluded files, including controllers and IO orchestrators), with
+**all branches exercised** (see "Cover the BRANCHES"). The single permitted residual is
+`cannot_test`, and it is not a free pass:
+
+- **Every uncovered branch is either covered or a `cannot_test` entry — there is no third state.**
+  If a target-layer method sits below 100% branch coverage and it is not in `cannot_test`, the
+  pass is not done; go pin the missing branches. A worklist item is closed only when its branches
+  are exercised OR the specific blocked branch/method is in `cannot_test`.
+- **Each `cannot_test` entry is a documented, mitigated decision**, scoped to a method (never a
+  file/folder): `{ target, category, lines, reason (signal at file:line), mitigation }`. The
+  mitigation is the concrete source change that would unlock it (extract `IClock`, inject the
+  repository interface, move the pure slice out), or an explicit "none — genuinely
+  nondeterministic external boundary". This is the "detailed report + mitigation plan for what
+  truly cannot be covered" that the exit requires.
+- **The residual is reported, not buried.** Report §6 ("Not Testable") renders every entry with
+  its lines, reason, and mitigation; the suite critique (below) audits each one hardest before
+  the baseline locks. A large `cannot_test` list is a signal to escalate a shared-seam refactor
+  to the human, not to accept as-is.
+
+This is not "stopping on a number" — you are not chasing the overall %, you are driving the
+testable set's uncovered branches to zero. The resulting overall % is whatever falls out of that.
+
+## Promotion gate — set the baseline and commit only when the exit gate is met
 
 `coverage-report` (to set/raise the **baseline**) and any commit are **promotion steps**. They
-run ONLY after the entire worklist is exhausted (every item **branch-covered** or in
-`cannot_test`, per the in-loop measurement above) **and the suite critique below has run**. Per
+run ONLY after the exit gate above is met (the testable set 100% branch-covered, every residual a
+mitigated `cannot_test` entry) **and the suite critique below has run**. Per
 the action ladder, generation itself is edit-only: leave the tree dirty and stop. The
 distinction from the in-loop measurement: that one is read-only feedback you may run anytime;
 this one *writes the floor*, so it runs once, last. Do not write `baseline.recorded_overall`
@@ -219,11 +262,17 @@ For each target method:
 3. Read the actual value from the run. Write it into the assertion.
 4. Re-run until green.
 
-If step 2 is impossible — does not compile in isolation, needs real infrastructure,
-depends on wall-clock/id/random with no seam — DO NOT write a predicted assertion.
-Add the target to the manifest `cannot_test` list with a category and reason
-(`nondeterministic`, or `integration-scope` if it needs real IO). Make no source change
-to fix it; the backfill freezes source.
+If step 2 is genuinely impossible — needs real infrastructure with no seam, or depends on
+wall-clock/id/random that flows into the asserted output with no seam — DO NOT write a
+predicted assertion. Add the target (the specific method, not the file) to the manifest
+`cannot_test` list with a category, a reason (the signal at `file:line`), and a **mitigation**
+(the source change that would unlock it, or "none — genuinely nondeterministic external
+boundary"). Make no source change to fix it; the backfill freezes source.
+
+**A failing-to-compile test is NOT "impossible" — it is unfinished authoring.** Rule out the
+authoring causes first (mock wiring, a legitimate missing test-project reference, an unstubbed
+constructor argument). Only route to `cannot_test` when the unit cannot be constructed or
+exercised through any interface after those are addressed — never on the first red build.
 
 **Cover the BRANCHES, not just one happy path** — a target method is "done" only when its
 branches are exercised, not when it merely has *a* green test. For a method with branching
@@ -253,12 +302,16 @@ record them as observations for the report — frozen, not endorsed. Do not chan
 ## Output of a generation pass
 
 - New/updated test files mirroring source structure, named `Method_Scenario_Expected`.
-- Any newly discovered untestable targets appended to the manifest `cannot_test` list.
+- Any newly discovered untestable targets appended to the manifest `cannot_test` list, each
+  scoped to a method and carrying `{ category, lines, reason, mitigation }`.
 - A short list of suspected-latent-bug observations (target + what looked wrong), for the
   report's observations section. Do not fix them.
-- The updated worklist checklist: N of M items done, what remains (and which phase, if phased).
+- The updated worklist checklist: N of M items done, what remains (and which phase, if phased) —
+  the testable set at 100% branch coverage, with the residual `cannot_test` list and its
+  mitigation plan called out explicitly (this is the exit-gate evidence).
 
-Only once the worklist is fully exhausted **and the suite critique has run** (see the promotion
-gate and "Suite critique"), run `coverage-report` to measure and set the baseline. Do not assert
+Only once the exit gate is met (testable set 100% branch-covered, every residual a mitigated
+`cannot_test` entry) **and the suite critique has run** (see the exit/promotion gates and "Suite
+critique"), run `coverage-report` to measure and set the baseline. Do not assert
 coverage numbers yourself — they come from the tool. Until then, leave the tree dirty and stop
 without committing.
