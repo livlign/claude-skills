@@ -59,5 +59,20 @@ cannot_test:
     mitigation: ""    # REQUIRED — the source change that unlocks it, e.g. "Inject IClock and read _clock.UtcNow",
                       # or "none — genuinely nondeterministic external boundary" when nothing would
 
-# Allowed categories (extend as the pilot surfaces new ones):
-#   integration-scope, e2e-scope, generated, dto-no-logic, nondeterministic
+# Canonical categories — use these exact spellings (hyphens, lower-case). The report groups by
+# category, so drift like `framework_mismatch` vs `framework-incompatible` splits one real concept
+# into noisy rows. The gate normalizes known aliases, but emit the canonical form.
+#
+# Exclusion categories (whole-file, covered by another test layer or no behavior):
+#   integration-scope · e2e-scope · generated · dto-no-logic · non-product
+#
+# cannot_test categories, by NATURE (the report splits §6 on this):
+#   DESIGN DEBT — fixable by a source change; should trend to zero:
+#     nondeterministic         — clock/id/random/IO flows into the asserted output, no seam
+#     requires-source-change   — needs a seam / InternalsVisibleTo / extracted interface to test
+#   STRUCTURAL — not debt, will NOT trend to zero (audit once, then leave):
+#     unreachable-branch       — compiler-lowered/provably-unreachable branch (C1 artifact)
+#     unreachable              — dead statement/path not reachable from any unit entry
+#     dead-code                — method with no caller anywhere
+#     method-absent            — stale entry; the method no longer exists (remove it)
+#     framework-mismatch       — owning project targets a framework the test project can't reference

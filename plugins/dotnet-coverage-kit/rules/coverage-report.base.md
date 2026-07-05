@@ -104,7 +104,11 @@ new failure.
 ## Baseline semantics
 
 The production branch after the backfill merges is the baseline. Characterization tests
-are green by construction at that point. The recorded **in-scope** overall (see "In-scope
+are green by construction at that point. **The baseline is recorded only off a fully green
+suite** — coverage measured while any test fails is unreliable (a failing test may not have
+executed the lines it was meant to), so the report prints a ⚠️ red-suite banner and the
+baseline step is blocked until every failure is fixed. A run that ends with failing tests is
+unfinished, not a baseline. The recorded **in-scope** overall (see "In-scope
 denominator") becomes the initial ratchet floor; the raw overall is recorded alongside it
 for reference only. Suspected latent bugs found during backfill are frozen (the test asserts
 current behavior) and listed in the report's observations — frozen, not endorsed. When

@@ -80,7 +80,13 @@ at once. The efficiency rules apply **whichever way you run** — sequential or 
    - **Confirm the nondeterminism reaches the assertion.** A method that logs `DateTime.Now` but
      returns a deterministic result is fully testable — assert the result. Only when the
      nondeterministic value flows into the output you would assert (and cannot be pinned) does
-     that assertion drop.
+     that assertion drop. **Named anti-pattern — the entry-line `Stopwatch`/`Guid.NewGuid`:** event
+     handlers and command handlers commonly open with `var sw = new Stopwatch()` /
+     `Guid.NewGuid()` for timing and a correlation id used only in a log line. That is NOT the
+     method's behavior — the behavior is the event→document/state mapping that follows. Do NOT
+     route the whole handler to `cannot_test` for it; test the mapping/branches and ignore the log.
+     Routing ~50 near-identical handlers to `cannot_test` on this signal (as a real run did) is the
+     canonical false-exclusion this rule exists to stop.
    - **Still cover the deterministic branches.** A method with a `Guid.NewGuid()` id and three
      validation branches gets tests for the three branches (assert everything except the id, or
      assert the id is non-empty). `cannot_test` scopes to the specific method/assertion that is
@@ -193,6 +199,13 @@ report effectively goes missing. If `report.sh` isn't installed yet (repo pre-da
 it from `${CLAUDE_PLUGIN_ROOT}/scripts/report.sh` first, then run it. Only after `REPORT.md`
 exists do you write the measured Adjusted into `baseline.recorded_overall`.
 
+**Never record a baseline off a red suite.** Coverage measured while any test fails is
+unreliable — a failing test may not have executed the lines it was meant to, so the numbers are
+not the real output. If `report.sh`'s Test Results show any failure (the report prints a ⚠️
+banner), the baseline step is blocked: fix every failure until the suite is fully green, then
+re-measure. A backfill that ends with, say, 54 failing tests is unfinished, not ready to
+promote — do not write `baseline.recorded_overall` from that run.
+
 ## Suite critique — once, before the baseline locks in
 
 When the worklist is exhausted and the suite is green, run a single critique over the *finished*
@@ -209,13 +222,22 @@ applying one standard; it produces findings, it does not silently rewrite tests.
 1. **`cannot_test` legitimacy.** Re-check **every** `cannot_test` entry against the rubric
    signal: is it genuinely untestable (no seam, real infra, nondeterministic), or did generation
    take the easy out? Flag any entry where a seam exists or a deterministic test is feasible.
-   This is the escape hatch — audit it hardest.
+   This is the escape hatch — audit it hardest. Watch specifically for the entry-line
+   `Stopwatch`/`Guid.NewGuid` false-exclusion (a whole handler dropped because it opens with a
+   timing/correlation id used only in logging) — the handler body is testable and must be covered.
 2. **Assertion quality / C1 depth.** Find files where C0 is high but C1 is low (lines run but
    branches never asserted → shallow tests) and any vacuous/tautological assertions the
    per-chunk verify missed (asserting a mock returns what it was set to). Whole-suite view —
    do not re-do the per-test check the backfill workflow already did.
-3. **Systematic patterns.** Clusters of `cannot_test` that share one fixable seam (one
-   extract-interface unlocks many), a category dodged wholesale, repeated smells.
+3. **Systematic patterns — cluster and quantify, do not just note.** Group `cannot_test` by
+   shared signal and **count** each cluster: "N handlers share `Stopwatch`+`Guid.NewGuid`",
+   "M types blocked on `InternalsVisibleTo`". A cluster of ≥3 is almost always ONE fix that
+   unlocks all of them (an `IClock`/`IGuidProvider` on a shared base class, a single
+   `InternalsVisibleTo`, one extracted interface) — the highest-ROI move and the one most often
+   missed in a long flat list. Escalate each such cluster to the human with its count and the one
+   seam that clears it, rather than accepting N near-identical entries. Also normalize category
+   vocabulary while here (e.g. `framework_mismatch`/`framework-incompatible` → one label) so the
+   report groups cleanly. Also flag any category dodged wholesale and repeated smells.
 4. **Highest-ROI next moves** — concrete, not vibes.
 5. **In-scope coverage gaps — TARGET layer only (the lens that is easiest to miss).** From the
    report's **Risk Hotspots** and per-file table, list every **target-layer** method/file with

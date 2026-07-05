@@ -344,7 +344,41 @@ COVERED_BY = {
 ACTION = {
     "nondeterministic": "Frozen; needs an injected seam (clock/random/IO) to become testable",
     "integration-scope": "Cover via integration test, or extract a pure seam",
+    "requires-source-change": "Needs a source change (inject a seam / add InternalsVisibleTo) to become testable",
+    "unreachable": "None — structurally unreachable (compiler-lowered or dead branch); not coverable",
+    "unreachable-branch": "None — compiler-lowered/unreachable branch; excluded from C1 by design",
+    "framework-mismatch": "None via unit test — target framework differs from the test project; cover elsewhere or retarget",
+    "dead-code": "Remove the dead code or wire up its caller; not a unit-test gap",
+    "method-absent": "Stale entry — the method no longer exists; remove it from the manifest",
 }
+
+# Agents drift in vocabulary across parallel chunks (framework_mismatch vs framework-incompatible,
+# method_absent vs method-absent, requires-seam vs requires-source-change), so the report
+# normalizes to a fixed set before grouping — otherwise one real concept splits into several
+# noisy rows and the "one seam unlocks N" signal is lost.
+_CATEGORY_ALIASES = {
+    "framework_mismatch": "framework-mismatch", "framework-incompatible": "framework-mismatch",
+    "method_absent": "method-absent",
+    "nondeterministic_dead_code": "dead-code", "dead_code": "dead-code",
+    "requires_source_change": "requires-source-change", "requires_seam": "requires-source-change",
+    "requires-seam": "requires-source-change", "bynder-internal-no-internalsvisibleto": "requires-source-change",
+    "unreachable_branch": "unreachable-branch",
+}
+def canonical_category(cat):
+    c = (cat or "").strip().lower()
+    return _CATEGORY_ALIASES.get(c, c)
+
+# Two natures of a Not-Testable entry — decides whether "should trend to zero" applies:
+#   debt       — fixable by a source change (inject a seam, add InternalsVisibleTo, extract a pure
+#                method). SHOULD trend to zero as the code is refactored.
+#   structural — not debt and will not move: a compiler-lowered/unreachable branch, dead (uncalled)
+#                code, a target-framework mismatch, generated code. Framing these as "should trend
+#                to zero" is misleading — they are permanent, honest exclusions.
+_STRUCTURAL_CATEGORIES = {
+    "unreachable", "unreachable-branch", "framework-mismatch", "dead-code", "method-absent", "generated",
+}
+def category_nature(cat):
+    return "structural" if canonical_category(cat) in _STRUCTURAL_CATEGORIES else "debt"
 
 
 def main():
@@ -590,6 +624,14 @@ def main():
     out.append("**Tooling:** %s  " % args.tooling)
     out.append("**Adjusted coverage:** C0 %.1f%% / C1 %.1f%%\n" % (c0, c1))
 
+    # Red-suite banner: coverage measured with failing tests is unreliable, and a baseline must
+    # never be recorded off it (see the generate-tests promotion gate). Surface it loudly at the top
+    # — a partially-red run silently locking a baseline is exactly how a misleading floor gets set.
+    if tr and tr.get("failed"):
+        out.append("> ⚠️ **%d test(s) FAILING in this run.** Coverage measured off a red suite is "
+                   "unreliable — do NOT record or trust a baseline until the suite is green. Fix the "
+                   "failures, then re-measure.\n" % tr["failed"])
+
     # 1. Test Results
     out.append("## 1. Test Results")
     out.append("| Total | Passed | Failed | Skipped | Flaky | Duration |")
@@ -707,7 +749,12 @@ def main():
             return "E2E coverage, or refactor"
         return "Review"
 
-    hot = [mm for mm in methods if mm["complexity"] >= 5 and mm["line_rate"] < 0.8]
+    hot_all = [mm for mm in methods if mm["complexity"] >= 5 and mm["line_rate"] < 0.8]
+    # A method already declared in cannot_test (dead/unreachable/nondeterministic-no-seam) is NOT
+    # an in-scope unit gap — it is accounted for in section 6. Leaving it here contradicts §6
+    # (e.g. a dead private method with no caller shown as "unit-test it"). Drop it and note how many.
+    hot = [mm for mm in hot_all if mm["name"] not in cannot_test_names]
+    suppressed_hot = len(hot_all) - len(hot)
     hot.sort(key=lambda x: (bucket_of(x["file"]).startswith("excl:"), -(x["complexity"] * (1.0 - x["line_rate"]))))
     if hot:
         in_scope_hot = [mm for mm in hot if not bucket_of(mm["file"]).startswith("excl:")]
@@ -726,8 +773,10 @@ def main():
                           100.0 * mm["line_rate"], b, action_for(b)))
         if len(hot) > args.needs_attention_top:
             out.append("\n_+%d more (complexity ≥5, coverage <80%%) — see the HTML report._" % (len(hot) - args.needs_attention_top))
+        if suppressed_hot:
+            out.append("\n_(%d complex-but-uncovered method(s) omitted here — already logged in section 6 as `cannot_test`; not in-scope gaps.)_" % suppressed_hot)
     else:
-        out.append("\nNone — no method with complexity ≥5 is below 80% coverage.")
+        out.append("\nNone — no method with complexity ≥5 is below 80% coverage (after excluding cannot_test).")
 
     # 5. Excluded Code
     out.append("\n## 5. Excluded Code (intentional, out of scope)")
@@ -743,25 +792,64 @@ def main():
         out.append("| %s | manifest pattern | %s (%d patterns) | %s |"
                    % (ex_examples, cat, len(pats), COVERED_BY.get(cat, "—")))
 
-    # 6. Not Testable
-    out.append("\n## 6. Not Testable (design findings — should trend to zero)")
-    out.append("_Anything here that is genuinely target logic is a refactor candidate, not an exemption. "
-               "Each entry is scoped to a method and carries a mitigation — the way out, not a permanent exemption._")
-    out.append("| Class / Method | Where | Why not unit-testable | Category | Mitigation |")
-    out.append("|----------------|-------|----------------------|----------|------------|")
+    # 6. Not Testable — split by NATURE, because "should trend to zero" is only true for debt.
     def clip(s, n=110):
         s = (s or "").replace("\n", " ")
         return s[:n - 3] + "…" if len(s) > n else s
-    if cannot_test:
-        for ct in cannot_test:
-            cat = ct.get("category", "—")
-            lines = ct.get("lines") or "—"
-            # Prefer the entry's own mitigation; fall back to the per-category default action.
-            mitigation = clip(ct.get("mitigation")) or ACTION.get(cat, "Review")
-            out.append("| `%s` | %s | %s | %s | %s |"
-                       % (ct.get("target", "—"), lines, clip(ct.get("reason", "")), cat, mitigation))
+
+    out.append("\n## 6. Not Testable")
+    if not cannot_test:
+        out.append("_None recorded._")
     else:
-        out.append("| — | — | — | — | none recorded |")
+        debt = [ct for ct in cannot_test if category_nature(ct.get("category")) == "debt"]
+        structural = [ct for ct in cannot_test if category_nature(ct.get("category")) == "structural"]
+
+        def emit_table(rows):
+            out.append("| Class / Method | Where | Why not unit-testable | Category | Mitigation |")
+            out.append("|----------------|-------|----------------------|----------|------------|")
+            for ct in rows:
+                cat = canonical_category(ct.get("category"))
+                lines = ct.get("lines") or "—"
+                mitigation = clip(ct.get("mitigation")) or ACTION.get(cat, "Review")
+                out.append("| `%s` | %s | %s | %s | %s |"
+                           % (ct.get("target", "—"), lines, clip(ct.get("reason", "")), cat, mitigation))
+
+        # 6a — design debt: fixable by a source change, SHOULD trend to zero.
+        out.append("\n### 6a. Design debt — fixable by a seam/refactor; should trend to zero")
+        out.append("_Genuine target logic blocked by a missing seam. Each is a refactor candidate, not a "
+                   "permanent exemption; the Mitigation is the way out._")
+        if debt:
+            # Systematic-seam callout: many entries sharing one signal (a clock/id/Stopwatch at
+            # method entry) are usually ONE base-class seam that unlocks all of them — the highest-
+            # ROI move, and easy to miss in a long flat list. Quantify it so it can't be.
+            def sig_count(needle):
+                return sum(1 for ct in debt if needle.lower() in (ct.get("reason", "") or "").lower())
+            clusters = [(n, c) for n, c in
+                        (("Guid.NewGuid", sig_count("Guid.NewGuid")),
+                         ("Stopwatch", sig_count("Stopwatch")),
+                         ("DateTime.UtcNow/Now", sig_count("DateTime.UtcNow") + sig_count("DateTime.Now")),
+                         ("InternalsVisibleTo", sig_count("InternalsVisibleTo")))
+                        if c >= 3]
+            if clusters:
+                summary = "; ".join("%d share `%s`" % (c, n) for n, c in clusters)
+                out.append("\n> **Systematic seam opportunity:** %s. These usually collapse to ONE injected "
+                           "seam (e.g. an `IClock`/`IGuidProvider` on a shared base class, or a single "
+                           "`InternalsVisibleTo`) that unlocks many at once — do that before writing per-method "
+                           "workarounds.\n" % summary)
+            emit_table(debt)
+        else:
+            out.append("_None — no seam-fixable entries._")
+
+        # 6b — structural: will NOT move; not debt. Framing these as "trend to zero" is misleading.
+        out.append("\n### 6b. Structurally uncoverable — not debt; expected to persist")
+        out.append("_Compiler-lowered/unreachable branches, dead (uncalled) code, target-framework "
+                   "mismatches, generated code. These are honest, permanent exclusions — they will NOT "
+                   "trend to zero, and are not a unit-test gap. Audit that each is genuinely structural, "
+                   "then leave it._")
+        if structural:
+            emit_table(structural)
+        else:
+            out.append("_None._")
 
     out.append("\n---")
     out.append("_Full per-file drill-down: `coverage/html/summary.html` · exclusion reasons & cannot_test: `.claude/coverage/refs/coverage-manifest.yml`_")

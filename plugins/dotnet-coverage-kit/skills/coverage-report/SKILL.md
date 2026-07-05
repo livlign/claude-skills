@@ -70,9 +70,13 @@ coverage is two-pass throughout — **Adjusted** (target set, the headline + rat
 ## 4. Risk Hotspots    methods with complexity ≥5 and coverage <80%, sorted TARGET-FIRST, with a
                        "What to do" column + per-bucket guidance (target=unit-test; integration=
                        integration test/extract carve-out; e2e=E2E/refactor) and a takeaway line
-                       calling out how many are real in-scope unit gaps
+                       calling out how many are real in-scope unit gaps. Methods already in
+                       cannot_test are omitted (they belong to §6, not shown as gaps).
 ## 5. Excluded Code    manifest exclusions grouped by category — mechanism = "manifest pattern"
-## 6. Not Testable     cannot_test entries: target · where (lines) · why · category · mitigation
+## 6. Not Testable     split by nature: 6a Design debt (seam-fixable, should trend to zero) ·
+                       6b Structural (compiler/unreachable/dead/framework-mismatch — will NOT move).
+                       Columns: target · where (lines) · why · category · mitigation. A systematic-
+                       seam callout quantifies clusters (e.g. "N share Guid.NewGuid → one seam").
 ## Observations        (appended by the model) frozen latent-bug notes, if any
 ```
 
