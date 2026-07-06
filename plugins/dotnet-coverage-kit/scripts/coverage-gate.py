@@ -493,10 +493,26 @@ def main():
     raw = [0, 0, 0, 0, 0, 0]
     for fn, d in files.items():
         cat = bucket_of(fn)
+        # Adjusted counts the unit-testable slice of EVERY file: the whole file for a target
+        # (non-excluded), and the carve-out methods for an excluded file. This is what puts the
+        # carve-out slices of god-classes into the headline instead of leaving them only in
+        # diff-coverage. testable() returns (line_tot, branch_tot, line_cov, branch_cov) for that
+        # slice (zeros when an excluded file declares no carve-out).
+        tl, tb, tlc, tbc = testable(fn, d)
+        inscope[0] += tlc; inscope[1] += tl
+        inscope[2] += tbc; inscope[3] += tb
         if not cat.startswith("excl:"):
-            inscope[0] += d["cov"]; inscope[1] += d["tot"]
-            inscope[2] += d["bcov"]; inscope[3] += d["btot"]
             inscope[4] += d["mcov"]; inscope[5] += d["mtot"]
+        else:
+            co = carveout_lineset(fn)
+            if co:
+                lm = d["linemap"]
+                for mm in file_methods.get(fn, []):
+                    inter = set(mm["lines"]) & set(co)
+                    if inter:
+                        inscope[5] += 1
+                        if all((lm.get(no) or {}).get("hit") for no in inter):
+                            inscope[4] += 1
         t = cat_totals.setdefault(cat, [0, 0, 0, 0, 0, 0, 0])
         t[0] += d["cov"]; t[1] += d["tot"]; t[2] += d["bcov"]; t[3] += d["btot"]
         t[4] += 1; t[5] += d["mcov"]; t[6] += d["mtot"]

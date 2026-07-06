@@ -267,12 +267,59 @@ State the branch and commit you initialized against in the step 11 report, so th
    - **Large bare exclusions.** Any `integration-scope`/`e2e-scope` file above ~400 lines / ~10
      methods with an EMPTY `carveOutMethods` is a lead to re-open — a whole-file judgment likely
      missed a pure validator/mapper cluster. Re-scan its methods before accepting the bare label.
+   - **EF / LINQ query logic runs on the in-memory provider, so it is testable.** A method doing
+     `.Where/.Select/.OrderBy/.GroupBy/.ToListAsync` over an INJECTED `DbContext` executes on
+     `UseInMemoryDatabase`/SQLite and is testable, INCLUDING the projection inside a
+     `.Select(x => new Dto{...})`. Only genuinely provider-specific bits are not: `FromSqlRaw`/raw
+     SQL, a stored proc, or a SQL function/collation the in-memory provider cannot translate. Treat
+     "the LINQ is too provider-specific to run" as a claim to VERIFY against the actual query, never
+     a default. After the DbContext-seam fix, over-excluded EF queries are the single most likely
+     remaining swallow.
+   - **Half-testable methods: the validation/guard/mapping FRONT of an IO method is testable even
+     when the tail is not.** A method that validates inputs (throws), branches, or maps BEFORE it
+     touches the DbContext/HttpClient has a testable slice, those pre-IO branches are assertable (a
+     thrown validation, an early return). Do not stamp the whole method `testable:false`; carve out
+     the pre-IO logic with its line range and exclude only the IO tail.
+   - **Static, extension, `internal`, and base-class logic is testable, so a folder or an access
+     modifier must not hide it.** A pure `static` helper or a `public static ... this` extension
+     method is directly unit-testable wherever it sits. An `internal` method is testable via
+     `InternalsVisibleTo` (adding it is a seam, not a blocker). Concrete branching logic on an
+     `abstract`/base class is testable through a minimal test subclass. Each is a routine swallow
+     when a file is judged by its folder or by "cannot instantiate".
+   - **Inline `new` is a no-seam problem ONLY for infrastructure.** `new SomeDbContext()` /
+     `new HttpClient()` / a static infra factory blocks unit testing; `new`-ing a PURE value object,
+     DTO, `Regex`, calculator, or comparer does not. Never mark a method untestable for constructing
+     a deterministic in-process object.
+   - **Nondeterminism with an ALREADY-injected seam is `requires-source-change`, not permanent.** If
+     the class injects an `IClock`/`IClockService`/id/random provider yet a method reads
+     `DateTime.UtcNow`/`Guid.NewGuid` DIRECTLY, routing it through the injected seam is a one-line
+     fix: log `requires-source-change` with that mitigation, never a permanent `nondeterministic`
+     exemption.
+   - **Whole-project / whole-folder exclusions are the coarsest swallow, so open at least one file
+     per excluded project.** A project-level glob (`**/*.Infrastructure/**`, `**/DataAccess/**`,
+     `**/*.Api/**`) is valid only if EVERY file under it is genuinely untestable. Sample a file from
+     each blanket-excluded project/folder and confirm no pure calculator/validator/mapper lives
+     there; one testable class in an "Infrastructure" project is a false exclusion.
+   - **Vendored third-party code stays excluded, but only by its copyright header, not its folder.**
+     A file carrying a third-party copyright (e.g. `Copyright (c) Microsoft`) is `non-product`; a
+     sibling file in the SAME folder WITHOUT that header is the repo's OWN code and is classified by
+     its logic. Never blanket a whole vendored-SDK folder as `non-product` when the repo's concrete
+     provider/service (e.g. a SCIM `Scim*Service` doing user/group CRUD over an injected context)
+     lives beside it, that is exactly how a real product implementation gets swallowed.
 
    Reconcile as a loop: apply the clear-cut corrections (signal unambiguously contradicts the
    label) to the draft, then re-check the corrected entries; repeat until no clear-cut mismatch
    remains. Only then carry the genuine gray-zone disagreements into the step 11 report as
    explicit questions — do not silently resolve them. The human adjudicates only the few
    ambiguous cases.
+
+   **STRICT exit condition — no testable code swallowed.** The critique does not pass until, for
+   EVERY exclusion entry, each class above has been checked against the actual source and the entry
+   is backed by a per-method PROVEN NEGATIVE (the specific no-seam boundary each excluded method
+   hits), never a surface signal. An exclusion whose only justification is a type, folder, base
+   class, access modifier, or "uses a DbContext" is a defect and is re-opened. When in doubt about a
+   single method, the default is IN scope (carve it out), not swallowed — a wrongly-included method
+   costs one skippable test; a wrongly-excluded one hides a real gap forever.
 
 7. **Write files into the repo** (do not overwrite without confirmation). Lay `.claude/coverage/`
    out in subfolders by role — `tools/` (executable scripts), `refs/` (config + the testing-rules
