@@ -101,7 +101,7 @@ every file is tested or skipped.
 
 Shared (part of this toolkit, the same for every repo):
 - `rules/unit-testing.base.md`, `rules/coverage-report.base.md`
-- `skills/coverage-init`, `skills/generate-tests`, `skills/coverage-report`
+- `skills/coverage-init`, `skills/generate-tests`, `skills/coverage-report`, `skills/coverage-redo`
 - `templates/coverage.runsettings`, `templates/coverage-manifest.yml`
 - `scripts/run-coverage.sh`
 
@@ -122,6 +122,11 @@ Per repo (created by `coverage-init`, owned by your team):
 4. Merge to your main branch. That point is your **baseline**. From now on, developers run
    the check locally as they work, and CI runs it on every PR — both keep coverage at or
    above the baseline.
+
+**Already set up on an older kit version?** Run **`coverage-redo`** instead of re-running
+`coverage-init`. It re-checks the repo against the current rules, corrects and migrates your
+existing manifest (it does not overwrite it), generates tests only for the newly-found gaps
+while keeping your existing tests intact, and writes a fresh report.
 
 ## Seeing the report on GitHub
 

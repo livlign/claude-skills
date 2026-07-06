@@ -433,10 +433,21 @@ def main():
         tokens = set()
         for ex in exclusions:
             if match(fn, ex["pattern"]):
-                r = ex.get("reason", "") or ""
-                idx = r.find("CARVE-OUT:")
-                if idx >= 0:
-                    tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", r[idx + len("CARVE-OUT:"):]))
+                co = ex.get("carve_outs")
+                if isinstance(co, list) and co:
+                    # Structured form: one bare method name per entry. Preferred over prose because
+                    # each carve-out is tied to a specific (per-file) exclusion entry, so it cannot
+                    # leak across files the way a folder-glob CARVE-OUT: list can.
+                    for item in co:
+                        name = item.get("method", "") if isinstance(item, dict) else str(item)
+                        name = name.split("(")[0].split(".")[-1].strip()
+                        if name:
+                            tokens.add(name)
+                else:
+                    r = ex.get("reason", "") or ""
+                    idx = r.find("CARVE-OUT:")
+                    if idx >= 0:
+                        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", r[idx + len("CARVE-OUT:"):]))
                 break
         tokens -= cannot_test_names
         if not tokens:
@@ -792,6 +803,49 @@ def main():
         ex_examples = ", ".join("`%s`" % p for p in pats[:3]) + (" …(+%d)" % (len(pats) - 3) if len(pats) > 3 else "")
         out.append("| %s | manifest pattern | %s (%d patterns) | %s |"
                    % (ex_examples, cat, len(pats), COVERED_BY.get(cat, "—")))
+
+    # 5b. Partially testable (mixed) files: the testable carve-out slice kept IN scope inside an
+    # excluded file, emitted PER FILE so a mixed file is never hidden behind one folder-glob line.
+    def _clip1(s, n=120):
+        s = (s or "").replace("\n", " ").strip()
+        return s[:n - 1] + "…" if len(s) > n else s
+    out.append("\n## 5b. Partially testable (mixed) files")
+    out.append("_Excluded files that still carry a testable carve-out slice. The listed methods are IN "
+               "scope (their lines count toward Adjusted and diff coverage); the rest of the file is "
+               "excluded for the stated reason. Shown so a mixed file is never collapsed to one line._")
+    ambiguous = []
+    for ex in exclusions:
+        matched = [fn for fn in files if match(fn, ex["pattern"])]
+        has_co = (isinstance(ex.get("carve_outs"), list) and ex.get("carve_outs")) or ("CARVE-OUT:" in (ex.get("reason") or ""))
+        if has_co and len(matched) > 1:
+            ambiguous.append((ex["pattern"], len(matched)))
+    mixed_rows = []
+    for fn, d in sorted(files.items()):
+        co_lines = carveout_lineset(fn)
+        if not co_lines:
+            continue
+        exm = next((ex for ex in exclusions if match(fn, ex["pattern"])), None)
+        names = sorted({mm["bare"] for mm in file_methods.get(fn, []) if set(mm["lines"]) & set(co_lines)})
+        tl, tb, tlc, tbc = testable(fn, d)
+        rest = (exm.get("excluded_rest", "") if exm else "") or ""
+        cat = exm["category"] if exm else "?"
+        mixed_rows.append((short(fn), names, tlc, tl, cat, rest))
+    if mixed_rows:
+        out.append("| File | Testable carve-outs (in scope) | Carve-out C0 | Excluded rest |")
+        out.append("|------|--------------------------------|-------------:|---------------|")
+        for fnm, names, tlc, tl, cat, rest in mixed_rows:
+            nm = ", ".join("`%s`" % n for n in names[:6]) + (" …(+%d)" % (len(names) - 6) if len(names) > 6 else "")
+            covtxt = ("%.0f%%" % (100.0 * tlc / tl)) if tl else "n/a"
+            resttxt = _clip1(rest) if rest else ("(%s; no per-method reason recorded)" % cat)
+            out.append("| `%s` | %s | %s | %s |" % (fnm, nm or "—", covtxt, resttxt))
+    else:
+        out.append("_None: no excluded file declares a carve-out._")
+    if ambiguous:
+        out.append("\n> ⚠️ **Ambiguous carve-outs:** %d exclusion pattern(s) carrying carve-outs match MORE "
+                   "than one file, so the manifest cannot say which method belongs to which file. Split each "
+                   "into one per-file entry with a structured `carve_outs:` list:" % len(ambiguous))
+        for pat, n in ambiguous[:10]:
+            out.append(">  - `%s` (matches %d files)" % (pat, n))
 
     # 6. Not Testable — split by NATURE, because "should trend to zero" is only true for debt.
     def clip(s, n=110):

@@ -19,10 +19,12 @@ manifest and write it down as a checklist. The testable set is:
 
 1. Every file matched by a `category_map` target category and **not** matched by an
    `exclusions` pattern (the genuine unit-scope files), AND
-2. Every **CARVE-OUT method** documented in an `integration-scope` exclusion's `reason`
-   (the thin pure slices of god-classes — the UserService pattern). These are testable units
-   even though their file is integration-scope; init recorded them precisely so this step
-   covers them.
+2. Every **carve-out method** on an exclusion entry: the structured `carve_outs:` list (each
+   `{ method, lines, testable }`), or the legacy `CARVE-OUT: MethodA, MethodB` prose in `reason`
+   on older manifests. These are the thin pure/decision slices of god-classes (the UserService
+   pattern): testable units even though their file is integration-scope, and a DbContext-injected
+   service is tested by backing the context with the EF in-memory / SQLite provider. Init recorded
+   them precisely so this step covers them; the file's `excluded_rest` says what stays out of scope.
 
 Items already covered by existing tests are checked off, not re-done. Items in `cannot_test`
 are out. Everything else in the set MUST be either tested in this backfill or appended to
