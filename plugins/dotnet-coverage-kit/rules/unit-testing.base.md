@@ -133,8 +133,13 @@ these so it is testable.
 ## Structure and naming
 
 - Test files mirror source structure under the test project.
-- Mock dependencies through their interfaces; do not construct real collaborators in a
-  unit test (this is what makes it a unit test).
+- Substitute dependencies rather than wiring up real ones: mock interfaces/abstracts, and back a
+  constructor-injected `DbContext` with the EF in-memory or SQLite-in-memory provider. An
+  in-memory-backed context is a test substitute, not a live collaborator, so the test stays at
+  unit level (a sibling service already unit-tested this way is the proof it belongs in scope).
+  Never reach a live database, network, filesystem, or a statically-constructed / inline-`new`ed
+  context. The in-memory provider does not translate raw SQL or enforce relational constraints;
+  use SQLite-in-memory when query fidelity matters, and leave raw-SQL methods in integration scope.
 - Name tests `MethodName_Scenario_ExpectedResult`.
 - A test must not depend on the order it runs in or on another test having run.
 

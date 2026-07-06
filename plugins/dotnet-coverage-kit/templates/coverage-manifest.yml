@@ -27,25 +27,42 @@ category_map:
 # Patterns whose uncovered state is intentional. Each needs a category and a reason.
 # Reasons are reproduced verbatim in every report, so the report needs no AI to explain.
 #
-# CARVE-OUTS: a file-level exclusion is a REPORTING label, not a claim that the whole file
-# is untestable. When an excluded file (integration-scope orchestrator, e2e-scope controller,
-# etc.) still contains deterministic branching methods, list them in the reason as
-# `CARVE-OUT: MethodA, MethodB` — the gate keeps those methods IN scope and the backfill must
-# cover them. This is how a Controller/Api/Infrastructure file contributes its testable slice
-# instead of vanishing wholesale. Omitting a real carve-out is a false exclusion.
+# TESTABILITY IS PER METHOD. A file-level exclusion is a REPORTING label, never a claim that the
+# whole file is untestable. Two rules stop a MIXED file (some testable methods, some not) from
+# hiding its testable slice behind one ambiguous line:
+#   1. A glob ("**/Folder/**", or a "**/Name.cs" that matches several files) may ONLY cover a set
+#      that is UNIFORMLY excluded: every file, every method. The moment any matched file has a
+#      testable method, the glob is too coarse. Split it into one entry PER FILE.
+#   2. A per-file entry that has any testable method carries a structured `carve_outs:` list
+#      (method + lines + why-testable) plus an `excluded_rest` note (why the remainder is out).
+#      The gate keeps each carve-out method IN scope; the backfill must cover it. Because
+#      `carve_outs` is tied to that one file, a method name can never leak across files, which a
+#      folder-glob "CARVE-OUT:" list cannot guarantee (that is exactly why mixed content must be
+#      per-file, and why the gate WARNS when a carve-out-bearing pattern matches more than one file).
+# The legacy "CARVE-OUT: MethodA, MethodB" prose inside `reason` is still read for back-compat, but
+# new or edited entries should use the structured `carve_outs:` form. A missed carve-out is a false
+# exclusion.
 exclusions:
-  - pattern: "**/*.Infrastructure/**"
-    category: integration-scope
-    reason: "Persistence/external-IO; covered by integration tests, not unit scope. CARVE-OUT: <pure/decision methods, if any>"
-  - pattern: "**/*Controller.cs"
-    category: e2e-scope
-    reason: "Transport wrapper; covered by E2E. CARVE-OUT: <action-level validation/branching, if any>"
+  # Uniformly excluded: no testable method anywhere in the matched set, so a glob is fine.
   - pattern: "**/Migrations/**"
     category: generated
     reason: "EF migrations are generated, not hand-written logic"
   - pattern: "**/*Dto.cs"
     category: dto-no-logic
     reason: "Data carrier with no behavior"
+  # MIXED file: a PER-FILE entry (never a folder glob) with a structured carve-out list. The gate
+  # keeps these methods in scope and counted; everything else in the file is excluded per excluded_rest.
+  - pattern: "**/Services/OrderService.cs"
+    category: integration-scope
+    reason: "Order orchestration over a DbContext + payment SDK."
+    carve_outs:
+      - method: ValidateOrder
+        lines: "40-88"          # informational; the gate keys off the method name, not these numbers
+        testable: "pure input validation, branches on quantity/price, no deps"
+      - method: MapToDto
+        lines: "210-240"
+        testable: "deterministic entity-to-DTO mapping"
+    excluded_rest: "Place/Cancel/Refund reach the DbContext + payment SDK with no seam; cover via integration tests"
 
 # Specific targets that cannot be unit-tested as-is. Populated by generate-tests when a
 # unit fails the run-capture-fill precondition during the backfill. No source change is

@@ -66,11 +66,11 @@ State the branch and commit you initialized against in the step 11 report, so th
    |---|---|
    | `dto-no-logic` | only auto-properties / fields; no method body branches (`if`/`switch`/`?:`/loop); cyclomatic complexity ≈ 1. **Not** an AutoMapper `Profile`/mapping-config class (those are `mapper-config`, below) |
    | `mapper-config` | an AutoMapper `Profile` or mapping/DI-config class: declarative `CreateMap`/registration only, no branches today. Labeled distinctly from `dto-no-logic` so a future conditional `MapFrom`/`ConvertUsing` is not silently hidden under a "data carrier" label |
-   | `integration-scope` | depends on infrastructure: `DbContext`/repository impl, `HttpClient`, file/network IO, or an external SDK client — used directly, no seam |
+   | `integration-scope` | depends on a NON-SUBSTITUTABLE infrastructure boundary: a `DbContext` that is `new`ed inline or reached through a static factory (no seam), raw SQL / provider-specific query translation an in-memory provider cannot run, `HttpClient`, file/network IO, or an external SDK client used directly. A `DbContext` INJECTED through the constructor is NOT this: it is a substitutable seam (EF in-memory / SQLite-in-memory), so its presence alone does not make a method integration-scope. See the exclusion-signal principle and signal table below. |
    | `e2e-scope` | `ControllerBase`/`[ApiController]`, a hosted/background worker, or a `Program`/startup composition root |
    | `generated` | `[GeneratedCode]` attribute, a `*.g.cs`/`*.Designer.cs` file, or a `Migrations/` path |
    | `cannot_test: nondeterministic` | a `DateTime.Now`/`UtcNow`, `Guid.NewGuid`, `Random`, `Stopwatch`, `Environment` call with no injected seam **whose value flows into observable output** — a return value, an emitted command/document, or persisted state. **Dataflow-blind matching is the classic false positive:** if the only consumer of the value is a logging/telemetry call (`Serilog.Log.*`, `LogContext.PushProperty`, `ILogger`, a `Stopwatch` timing an `elapsed-ms` log line), it is NOT nondeterministic — classify by the method's real behavior instead (usually the mapping → target/carve-out, or `integration-scope` if the body is `DbContext`-bound). A correlation-id/elapsed-ms logged on every handler is a house style, not an untestable seam |
-   | target (unit-scope) | ≥1 method whose body branches **and** every dependency is mockable (interface/abstract) — no direct infra/IO/clock/random use |
+   | target (unit-scope) | ≥1 method whose body branches **and** every dependency is substitutable: an interface/abstract (mock it) OR a constructor-injected `DbContext` (back it with the EF in-memory / SQLite-in-memory provider). No inline-`new`ed infra, no static factory, no clock/random used directly. |
 
    **The file's classification is a REPORTING label; testability is decided per method.** A
    non-trivial file is rarely uniformly testable or untestable — the classification is its
@@ -91,8 +91,40 @@ State the branch and commit you initialized against in the step 11 report, so th
    (the UserService pattern). A file gets `trivial`/no-carve-out treatment only when it genuinely
    has zero deterministic branching methods.
 
-   **Hard rule — a bare (no-carve-out) exclusion on a LARGE file is not allowed without a
-   method-level re-scan.** A big multi-method service is the likeliest place to under-carve: the
+   **An exclusion signal names a boundary, not a verdict, and a reason may never be the signal
+   restated.** Every rubric row except `target` is a SURFACE signal: a type, base class, folder, or
+   import. It marks WHERE an untestable boundary sits; it is never, on its own, proof the file's
+   logic is untestable. The most damaging and most repeated failure of this kit is excluding a
+   whole file because it "has" such a signal, with a reason that only echoes the signal ("uses a
+   DbContext", "it's a Controller", "Lambda entry point"). That is not a reasonable explanation and
+   is not accepted. For every non-trivial file carrying an exclusion signal you MUST walk its
+   methods, and each excluded method's reason must be a PROVEN NEGATIVE about that method (the
+   specific un-seamable dependency its own body reaches), not the file's surface signal. The
+   decision / validation / mapping / computation logic that sits around the boundary is testable and
+   is a carve-out (or, when it dominates, `target`). Common signals, where the genuine boundary is,
+   and what stays testable:
+
+   | Surface signal | The genuine untestable boundary | What stays testable (carve-out / target) |
+   |---|---|---|
+   | constructor-injected `DbContext` | raw SQL (`FromSqlRaw`) / provider-specific LINQ; `SaveChanges` + external dispatch | validation, branching, mapping, computation, driven against an EF in-memory / SQLite context |
+   | `HttpClient` / typed client | the send over the wire | request building, response mapping, retry/branch logic (stub `HttpMessageHandler` or the client interface) |
+   | `ControllerBase` / `[ApiController]` | routing, model-binding, framework filters | the action's guard / validation / authorization branches before it delegates (construct the controller, call the action) |
+   | Lambda / hosted worker / `Program.cs` | host and trigger wiring | the handler's injected services and its pure per-item steps |
+   | `*Repository` / `*.Infrastructure` naming | the persistence / IO call itself | any decision or shaping logic the name hides |
+   | static factory or inline-`new`ed context (`RedisCacheFactory`, `new SomeContext()`) | THIS is the genuine no-seam case | nothing, until a seam is introduced: log `requires-source-change` with that seam as the mitigation |
+
+   Only the last row is a true whole-unit blocker. For every other signal a bare whole-file
+   exclusion is a false exclusion until a per-method walk proves each method genuinely reaches the
+   boundary. Fidelity caveat for the in-memory provider: it does not translate raw SQL or enforce
+   relational constraints, so it verifies logic shape, not query correctness; prefer
+   SQLite-in-memory when the query itself is under test, and leave raw-SQL methods in integration
+   scope. (Field-proven miss: dozens of `CustomerContext`-injected services labeled "no seam,
+   cannot unit test" while a sibling `target` service was already unit-tested against the same
+   in-memory context.)
+
+   **Hard rule: no bare (no-carve-out) exclusion is accepted without a per-method re-scan. This
+   applies to EVERY non-trivial file with a non-target label; the largest files are the highest-risk
+   case, not the only one.** A big multi-method service is the likeliest place to under-carve: the
    file gets judged whole, one `integration-scope` label, and its pure validator/mapper cluster is
    lost. So for any file above a size/method-count threshold (rule of thumb: >~400 lines OR >~10
    methods) that you are about to label `integration-scope`/`e2e-scope` with an EMPTY
@@ -138,12 +170,17 @@ State the branch and commit you initialized against in the step 11 report, so th
    draft: `category_map` (the target globs), `exclusions` (each non-target classification,
    grouped into patterns with the rubric signal as the reason), and `cannot_test` (the
    nondeterministic-no-seam methods only — each with a `mitigation`). **Carve-outs are NOT
-   `cannot_test` — they are testable methods that stay IN scope.** For every non-target file whose
-   `methodBreakdown` has ≥1 `testable: true` method, append those method names to that pattern's
-   exclusion `reason` in the exact parseable form `CARVE-OUT: MethodA, MethodB` (the gate reads
-   carve-outs from the reason and keeps their lines in scope). Putting a carve-out into
-   `cannot_test` would exclude the very method the backfill must cover — the opposite of the
-   granularity goal. **Collapse `trivial` files into
+   `cannot_test`: they are testable methods that stay IN scope.** For every non-target file with
+   ≥1 `testable: true` method, emit a PER-FILE exclusion entry (never a folder glob) carrying a
+   structured `carve_outs:` list, one item per method as `{ method, lines, testable }`, plus an
+   `excluded_rest` note stating why the remainder is out of scope. The gate keeps each carve-out
+   method IN scope and counted. A folder glob may cover ONLY a uniformly-excluded set (no testable
+   method anywhere under it), so a mixed folder is split into one entry per file. This is what stops
+   a mixed file from collapsing into a single ambiguous line, and it ties each method to its own
+   file so a carve-out cannot leak across files (the gate warns when a carve-out-bearing pattern
+   matches more than one file). The legacy `CARVE-OUT: MethodA, MethodB` prose in `reason` is still
+   parsed for back-compat, but emit the structured form. Putting a carve-out into `cannot_test`
+   would drop the very method the backfill must cover, the opposite of the granularity goal. **Collapse `trivial` files into
    glob exclusion patterns by directory** (e.g. `**/Dtos/**` → `dto-no-logic`) instead of one
    row each; emit per-file detail only for non-trivial files. **Normalize across chunks** —
    parallel agents drift in vocabulary (one says `integration-scope`, another `infra`);
@@ -209,6 +246,14 @@ State the branch and commit you initialized against in the step 11 report, so th
    - **Missing carve-outs are false exclusions.** For every `integration-scope`/`e2e-scope`
      file, check its per-method breakdown: any deterministic branching method not listed in
      `carveOutMethods` is testable code silently dropped. Add it as a carve-out.
+   - **A reason that only restates a surface signal is a defect; audit exclusions by signal-class.**
+     Group the exclusions by their signal (DbContext, HttpClient, Controller, Lambda,
+     Repository/Infrastructure naming) and check each group as a population. Any file excluded
+     because it "uses" the signal, with no per-method proven negative, is re-opened. The label
+     survives only for the specific methods that reach a genuine boundary (raw SQL, provider-specific
+     translation, an inline-`new`ed/static context, the send over the wire, bare persistence
+     plumbing); the decision/validation/mapping logic around it is carved out or promoted. A
+     constructor-injected `DbContext` treated as whole-file-untestable is the classic instance.
    - **Dataflow-blind `nondeterministic` is THE recurring false positive — audit it as a
      population, not row-by-row.** Pull every `nondeterministic` entry at once and check where the
      flagged `Guid.NewGuid`/`Stopwatch`/`DateTime.Now` value actually goes. If its only consumer
