@@ -4,15 +4,32 @@ schema_version: 1
 # This is the only file that differs per repo. It is the single source of truth for
 # WHY each file is included, excluded, or cannot be tested.
 
+# The coverage GOAL for the Adjusted (testable) slice: the level the backfill drives toward and
+# the service is expected to sustain. This is an AIM, not a backfill stop-signal. generate-tests
+# still drives the testable set to 100% branch coverage, with the only residual being documented
+# `cannot_test` (see that skill). The target is used three ways:
+#   1. Acceptance: after the backfill plus documented cannot_test, if Adjusted is BELOW target, the
+#      residual/exclusions are too large, so re-open the sweep or escalate a shared-seam refactor.
+#   2. Diff gate: `gate.diff_coverage_min_*` is set to the target so new/changed code enters AT the
+#      target on every PR (that is what keeps Adjusted at the goal over time).
+#   3. Floor: `baseline.recorded_overall` is recorded a few points BELOW target as headroom, so
+#      normal churn does not flap CI red. Target is the aim; the floor is the don't-regress line.
+# C0 (line) ~95% is realistic for a clean testable slice; C1 (branch) ~85% is the harder axis
+# (defensive/guard branches). Tune per repo: a thin Adjusted slice may not sustain 95% C1.
+target:
+  c0: 95              # Adjusted line coverage goal
+  c1: 85              # Adjusted branch coverage goal
+
 baseline:
   ref: ""              # git sha tagged as the baseline after the backfill merges
   recorded_overall:    # filled by coverage-report at baseline; becomes the ratchet floor
-    c0: null
+    c0: null           # record a few points BELOW `target` (headroom), not at it
     c1: null
 
 gate:
-  diff_coverage_min_c0: 80    # % of changed lines that must be covered in a PR
-  diff_coverage_min_c1: 70
+  # Set to `target` so changed lines enter at the goal on every PR (per-PR enforcement of target).
+  diff_coverage_min_c0: 95    # % of changed lines that must be covered in a PR
+  diff_coverage_min_c1: 85
   ratchet: true               # total coverage must not drop below baseline.recorded_overall
 
 # Maps assemblies / path globs to report categories. For clean-architecture repos this

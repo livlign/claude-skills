@@ -80,7 +80,10 @@ with a clean working tree. Additionally:
    - **Schema migration:** legacy prose `CARVE-OUT:` becomes a structured `carve_outs:` list;
      a carve-out-bearing folder/multi-file pattern is split into one per-file entry each with its
      own `carve_outs` and `excluded_rest`; a `cannot_test` entry with a non-canonical category is
-     moved to the canonical nature and given a `mitigation`.
+     moved to the canonical nature and given a `mitigation`. A manifest with no `target` block is
+     given the default (C0 95% / C1 85% on the Adjusted slice) so the report reads against the goal;
+     the existing `gate` and `baseline` are preserved (raising the diff gate to the target is a
+     reviewed change, not automatic).
    - **Preserve:** an exclusion the sweep still agrees with, a still-valid carve-out, the
      `baseline`, and the `gate` block are carried over unchanged.
    - **Gray zone:** a genuine disagreement (vendored-vs-product, a host blanket that may hide a

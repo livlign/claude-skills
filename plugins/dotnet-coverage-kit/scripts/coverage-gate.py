@@ -405,6 +405,8 @@ def main():
     gate = m.get("gate") or {}
     baseline = (m.get("baseline") or {}).get("recorded_overall") or {}
     floor_c0, floor_c1 = baseline.get("c0"), baseline.get("c1")
+    target = m.get("target") or {}
+    target_c0, target_c1 = target.get("c0"), target.get("c1")
     cannot_test = m.get("cannot_test") or []
 
     files, methods = parse_cobertura(args.cobertura)
@@ -690,6 +692,19 @@ def main():
     out.append("| Method       | %.1f%% | %.1f%% | — | — |" % (pct(raw[4], raw[5]), cm))
     out.append("")
     out.append("Total lines (Adjusted): %d/%d   Total branches (Adjusted): %d/%d" % (inscope[0], inscope[1], inscope[2], inscope[3]))
+    # Target = the coverage GOAL for the Adjusted slice (manifest `target`). Advisory only: it is the
+    # aim the backfill drives toward and the level to sustain, NOT a gate (the ratchet floor sits a
+    # few points below it, so gating on target would flap CI). Shown so the report reads against the goal.
+    if target_c0 is not None or target_c1 is not None:
+        def _tgt(axis, adj, tgt):
+            if tgt is None:
+                return None
+            gap = adj - float(tgt)
+            mark = "✅ met" if round(adj, 1) >= float(tgt) else "▼ %.1f pp to goal" % (-gap)
+            return "%s %.1f%% vs goal %.0f%% (%s)" % (axis, adj, float(tgt), mark)
+        parts = [s for s in (_tgt("C0", c0, target_c0), _tgt("C1", c1, target_c1)) if s]
+        out.append("\n**Target (goal for the Adjusted slice):** " + " · ".join(parts))
+        out.append("_Advisory aim, not a gate. Enforcement is the diff gate (new code at target) + the ratchet floor (no regression); see the manifest `target` block._")
     # The gate's pass/fail verdict is intentionally NOT rendered in the report — this is a
     # test-quality report, not an exam. The gate still enforces via the process exit code, and
     # its check details go to stderr (CI logs) below.

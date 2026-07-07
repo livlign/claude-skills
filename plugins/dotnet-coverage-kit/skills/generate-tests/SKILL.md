@@ -182,6 +182,16 @@ files", 100% of it. The testable set is: every target unit-scope method + every 
 This is not "stopping on a number" — you are not chasing the overall %, you are driving the
 testable set's uncovered branches to zero. The resulting overall % is whatever falls out of that.
 
+**The manifest `target` (default C0 95% / C1 85% on the Adjusted slice) is an ACCEPTANCE bar, not
+this exit condition.** The exit gate above is stricter: it drives the testable set to 100% branch
+coverage with `cannot_test` as the only residual. The target is a downward sanity check on the
+*result*: once the exit gate is met, if the measured Adjusted is still BELOW target, the residual
+(the `cannot_test` list / exclusions) is too large to be honest, which is a signal to re-open the
+sweep or escalate a shared-seam refactor (the systematic-seam clusters in the suite critique), not
+to lower the bar. Do not confuse the two: you never *stop early* at the target, and you never accept
+an Adjusted below it without escalating why. The target is also what the diff gate is set to, so new
+code lands at the goal; the recorded baseline floor sits a few points below it (see the manifest).
+
 ## Promotion gate — set the baseline and commit only when the exit gate is met
 
 `coverage-report` (to set/raise the **baseline**) and any commit are **promotion steps**. They
