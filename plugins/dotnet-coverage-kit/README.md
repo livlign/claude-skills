@@ -6,27 +6,31 @@ come from real tools (not guesses), and a simple text file in each repo explains
 every file is tested or skipped.
 
 ```text
-   ┌────────────────────┐
-   │   coverage-init    │   plan the repo  (parallel sweep classifies every file)
-   └─────────┬──────────┘
-             │   draft ⇄ self-critique  →  refine   (loops until the plan is clean;
-             ▼                                        only unclear cases go to you)
-   ┌────────────────────┐
-   │   generate-tests   │   write the tests  (optional parallel backfill)
-   └─────────┬──────────┘
-             │   suite ⇄ self-critique  →  fix      (before the baseline locks in)
+   ┌────────────────────┐   plan the repo. A parallel sweep classifies every file;
+   │   coverage-init    │   mixed files carve out their testable methods, so a
+   └─────────┬──────────┘   god-class is never skipped whole.
+             │   draft, self-critique, refine  (loops until the plan is clean;
+             ▼                                   only unclear cases go to you)
+   ┌────────────────────┐   write the tests  (optional parallel backfill).
+   │   generate-tests   │   GOAL: Adjusted (testable) coverage reaches the
+   └─────────┬──────────┘   target, default C0 95% / C1 85%.
+             │   suite self-critique, then fix  (before the baseline locks in)
              ▼
-   ┌────────────────────┐
-   │  coverage-report   │   measure         — one command → action-first report
-   └─────────┬──────────┘
-             ▼
-   ┌────────────────────┐
-   │   merge to master  │   set the baseline — overall in-scope coverage = ratchet floor
+   ┌────────────────────┐   measure vs target + baseline
+   │  coverage-report   │   (one command, action-first report)
    └─────────┬──────────┘
              ▼
-   ┌────────────────────┐
-   │  check each change │   keep it green   — diff coverage + ratchet + scope guard
-   └────────────────────┘   (dev locally + CI gate on every PR to master)
+   ┌────────────────────┐   set the baseline. The floor is recorded a few points
+   │   merge to master  │   below the target (headroom); it only moves up.
+   └─────────┬──────────┘
+             ▼
+   ┌────────────────────┐   keep it green: diff coverage at target + ratchet +
+   │  check each change │   scope guard  (dev locally + CI gate on every PR to master)
+   └────────────────────┘
+
+   Already onboarded on an older kit version? Run coverage-redo instead of
+   coverage-init: it re-audits, corrects and migrates the manifest, and fills
+   only the newly-found gaps.
 ```
 
 > 🔎 **Full visual overview:** open [`docs/overview.html`](docs/overview.html) in a browser for the
@@ -56,6 +60,10 @@ every file is tested or skipped.
   tested safely is listed in the manifest with a reason — the source code is never changed.
 - **Why:** you get a safety net so future changes can't break things by accident, without
   touching the code you are protecting.
+- **Goal:** the aim is for the *testable* part of the code (the "Adjusted" coverage, after
+  skips) to reach the repo's target, by default 95% of lines and 85% of branches. That target
+  lives in the manifest: the backfill drives toward it, the PR gate holds new code to it, and
+  the baseline floor is recorded just under it so normal churn does not trip the check.
 - **Self-check before the baseline:** once the suite is written, a **critique loop** reviews it —
   is anything marked "can't test" actually testable? are any tests shallow? — and fixes what it
   can before the baseline locks in. (It never second-guesses the coverage numbers; those are the
@@ -90,6 +98,9 @@ every file is tested or skipped.
 
 ## A few terms
 
+- **Target (goal):** the coverage level you want the testable code to reach and hold, by
+  default 95% of lines (C0) and 85% of branches (C1) on the Adjusted slice. The backfill aims
+  for it, the PR gate holds new code to it, and the baseline floor sits just under it.
 - **Coverage** — how much of your code the tests actually run. We track lines run and
   decision branches taken.
 - **Baseline** — the coverage level on the day you first merge. It becomes the minimum to
