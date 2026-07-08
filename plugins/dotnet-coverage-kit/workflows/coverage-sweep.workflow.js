@@ -16,6 +16,10 @@ export const meta = {
 // disk, so a Plan agent reads the manifest and partitions it into on-disk per-chunk lists; each
 // Classify agent reads its own list. Synthesis + the single cross-project critique run at the MAIN
 // agent, NOT here.
+// Defensive: the Workflow tool expects `args` as a real JSON object. A caller that passes it as a
+// JSON-encoded STRING would make every `args.foo` undefined and silently default everything.
+// Normalize a stringified payload so a caller mistake degrades gracefully instead of running blind.
+if (typeof args === 'string') { try { args = JSON.parse(args) } catch (e) { /* leave as-is */ } }
 const concurrency = Math.max(1, Math.floor(Number(args && args.concurrency) || 3))
 const filesManifest = (args && args.filesManifest) || 'coverage/sweep/files.json'
 const rubric = (args && args.rubric) || '(rubric not supplied — read it from the coverage-init skill conventions)'
