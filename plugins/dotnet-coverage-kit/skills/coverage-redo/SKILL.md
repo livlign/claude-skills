@@ -108,12 +108,23 @@ with a clean working tree. Additionally:
    confirm or correct before any test is generated. This is the hard gate: do not proceed to
    step 7 in the same turn without confirmation.
 
-7. **Generate tests for the NEW gaps only.** Run `generate-tests` in characterization mode
-   (this is existing code: freeze current behavior) with the reconciled manifest. Its worklist is
-   the newly-in-scope carve-outs and targets; items already covered by existing tests are checked
-   off and left untouched, per that skill's rules. For a large newly-found backlog, fan it out
-   with the same parallel backfill option, asking first. Untestable-as-is units are routed to
-   `cannot_test` with a `mitigation`, exactly as in a normal backfill.
+7. **Generate tests for the NEW gaps only, and run it to completion.** Run `generate-tests` in
+   characterization mode (this is existing code: freeze current behavior) with the reconciled
+   manifest. Its worklist is the newly-in-scope carve-outs and targets; items already covered by
+   existing tests are checked off and left untouched, per that skill's rules. Untestable-as-is units
+   are routed to `cannot_test` with a `mitigation`, exactly as in a normal backfill.
+
+   **The manifest confirmation in step 6 is the ONE gate. After it, execute autonomously.** For a
+   large newly-found backlog, fan it out with the parallel backfill: ask the user for the agent
+   count ONCE (or default to 3 on "go"), then run the fan-out to completion. Follow the
+   `generate-tests` fan-out contract EXACTLY (write `coverage/backfill/worklist.json` first and
+   confirm it is non-empty; pass `args` as a JSON object with `worklistManifest`, never an inline
+   `worklist` and never a stringified payload; invoke via `scriptPath`). Do NOT re-ask per batch,
+   re-explain the plan between phases, fresh-relaunch a run that can be resumed, or drop back to
+   sequential `Agent()` calls: those are the exact behaviors that turned a real redo into dozens of
+   back-and-forth turns. The goal is "every testable part has a branch-covered test or a cited
+   `cannot_test` entry"; keep going until that holds, reporting progress, not asking permission to
+   continue.
 
 8. **Re-baseline decision (explicit, human-gated).** Re-measure with `coverage-report`. Because
    newly-in-scope code entered the Adjusted denominator, the recorded coverage may have moved.

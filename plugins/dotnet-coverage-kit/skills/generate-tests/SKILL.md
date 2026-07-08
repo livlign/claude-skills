@@ -26,6 +26,12 @@ manifest and write it down as a checklist. The testable set is:
    service is tested by backing the context with the EF in-memory / SQLite provider. Init recorded
    them precisely so this step covers them; the file's `excluded_rest` says what stays out of scope.
 
+**Resolve every worklist item to a full repo-relative path, not a basename.** Repos have many
+files sharing a name (`UserService.cs`, `Handler.cs`); test the exact file the manifest entry
+points at, mirror the test under that same path, and never carry one file's carve-out methods onto
+its same-named sibling. If a manifest pattern is ambiguous (bare basename matching several files),
+flag it back to the manifest rather than guessing which file it meant.
+
 Items already covered by existing tests are checked off, not re-done. Items in `cannot_test`
 are out. Everything else in the set MUST be either tested in this backfill or appended to
 `cannot_test` with a reason — there is no third option of silently leaving it untouched.
@@ -77,8 +83,14 @@ at once. The efficiency rules apply **whichever way you run** — sequential or 
    present:
    - **Confirm "no seam."** Is the dependency really un-mockable? A collaborator injected as an
      interface/abstract, an `IHttpClientFactory`, an optional `Func<DateTime>` — these are seams.
+     A **constructor-injected `DbContext`** is also a seam: back it with the EF in-memory / SQLite
+     provider. A `DbContext` on the constructor is NOT grounds to blanket-`cannot_test` the class;
+     dumping every DbContext-touching method into `cannot_test` (as a real run did, roughly 87 false
+     entries in one repo) is the canonical false-exclusion this rule exists to stop.
      Route to `cannot_test` only when the nondeterministic/infra call is made directly with no
-     injectable seam.
+     injectable seam, or when the specific EF op is one the in-memory provider cannot run (raw SQL,
+     `ExecuteUpdate`/`ExecuteDeleteAsync`, `Batch*`, real transactions, unset-rowversion inserts,
+     untranslatable LINQ).
    - **Confirm the nondeterminism reaches the assertion.** A method that logs `DateTime.Now` but
      returns a deterministic result is fully testable — assert the result. Only when the
      nondeterministic value flows into the output you would assert (and cannot be pinned) does
@@ -121,11 +133,33 @@ so present the trade-off and let them choose:
    - **10 agents** — fastest, highest burn, ~1 hour.
 3. On their choice, **write the risk-ordered worklist to disk** as a JSON array at
    `coverage/backfill/worklist.json` (each item shaped `{ file, methods?, group?, mode? }`), then
-   invoke the workflow with the manifest **path, not the list itself** (a large inline `worklist`
-   array mis-parses in the tool call):
+   invoke the workflow with the manifest **path, not the list itself**. Get the call exactly right
+   (each rule below is a real field failure this kit has hit, where ZERO agents ran and the launch
+   still looked like success):
+   - **Write the file FIRST and confirm it is non-empty** (`test -s coverage/backfill/worklist.json`).
+     The workflow's Plan agent reads this file off disk; if it is missing or empty the run bails with
+     `empty-worklist` and spawns nothing.
+   - **Pass `args` as a real JSON object, never a JSON-encoded string.** A stringified payload makes
+     every field undefined inside the workflow, so it silently defaults and runs nothing.
+   - **Pass `worklistManifest` (the path). There is NO `worklist` arg.** An inline `worklist:[...]`
+     is ignored by the workflow AND, when large, trips the approval-dialog control-char guard. Do not
+     put the array in `args` at all.
+   - **Invoke via `scriptPath`, not `name`** (name + inline args is what tripped the guard in the
+     field).
+
    `Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/coverage-backfill.workflow.js",
    args: { concurrency: <chosen>, solution: "<sln>", worklistManifest: "coverage/backfill/worklist.json" } })`.
    If the user just says "go", default `concurrency: 3`.
+
+4. **After launch, drive it to completion. Do not re-ask, re-explain, or fall back to one-by-one.**
+   Once concurrency is chosen and the workflow is launched, the fan-out IS the plan; executing it is
+   the goal, not a checkpoint. Monitor the background run to done. If a run dies mid-flight (session
+   exit, interruption), **resume it** with `resumeFromRunId` so completed chunks replay from cache; do
+   NOT fresh-relaunch, which orphans the prior run's git worktrees and duplicates work. Only start a
+   truly new run when there is no prior run to resume. Never quietly abandon the workflow and generate
+   the remaining worklist with sequential `Agent()` calls: that is the exact regression this fan-out
+   exists to prevent (it burns the same tokens without the parallelism and drags the user through
+   dozens of turns). If the workflow is genuinely unusable, say so and ask; do not silently downgrade.
 
 The workflow reads the worklist off disk and partitions it into `concurrency` chunks (one agent
 each, in its own git worktree so parallel writes don't collide), generates + adversarially verifies

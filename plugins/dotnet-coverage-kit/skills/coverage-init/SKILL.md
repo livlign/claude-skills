@@ -91,6 +91,19 @@ State the branch and commit you initialized against in the step 11 report, so th
    (the UserService pattern). A file gets `trivial`/no-carve-out treatment only when it genuinely
    has zero deterministic branching methods.
 
+   **Target vs carve-out is decided by the MAJORITY of the public surface, because `target` uses
+   the whole-file denominator.** A `target` file counts *every* instrumented line toward Adjusted,
+   and `cannot_test` entries do NOT subtract from a target file's denominator. So a god-class whose
+   public methods are mostly IO-bound must NOT be labeled `target`: as `target` its unavoidable IO
+   lines are counted uncovered forever and no amount of testing lifts it. Decide by counting the
+   public methods. If a majority of the public surface is unit-testable (pure/seamable, injected
+   `DbContext` included), keep the file `target` and route the few genuinely IO-bound methods to
+   `cannot_test`. If a majority is genuinely IO-bound, classify the FILE as `integration-scope` and
+   carve OUT the pure methods; they stay in scope and counted over the carve-out denominator, not
+   the whole file. Getting this backwards is a recurring failure mode. An IO-dominant service
+   shipped as full `target` tanks Adjusted and cannot be fixed by adding tests, while a pure-logic
+   service demoted to `integration-scope` hides real coverage debt.
+
    **An exclusion signal names a boundary, not a verdict, and a reason may never be the signal
    restated.** Every rubric row except `target` is a SURFACE signal: a type, base class, folder, or
    import. It marks WHERE an untestable boundary sits; it is never, on its own, proof the file's
@@ -179,7 +192,18 @@ State the branch and commit you initialized against in the step 11 report, so th
    a mixed file from collapsing into a single ambiguous line, and it ties each method to its own
    file so a carve-out cannot leak across files (the gate warns when a carve-out-bearing pattern
    matches more than one file). The legacy `CARVE-OUT: MethodA, MethodB` prose in `reason` is still
-   parsed for back-compat, but emit the structured form. Putting a carve-out into `cannot_test`
+   parsed for back-compat, but emit the structured form.
+
+   **Same-named files MUST be disambiguated by full repo-relative path.** Repos routinely have
+   several files sharing a basename (`UserService.cs`, `Handler.cs`, `Mapper.cs`) in different
+   projects or folders. A bare `UserService.cs` or `**/UserService.cs` glob silently collapses them
+   into one row: one classification wrongly applied to all of them, and carve-out methods leaking
+   across unrelated files. Every manifest pattern (target glob, exclusion, carve-out entry) whose
+   basename is not unique in the repo MUST use the file's full repo-relative path
+   (`src/Account.Api/Services/UserService.cs`), never the basename alone. The sweep already records
+   the full path per row; carry it through to the manifest verbatim. The gate's "pattern matches
+   more than one file" warning is the backstop, but resolve it at synthesis rather than shipping the
+   ambiguous glob. Putting a carve-out into `cannot_test`
    would drop the very method the backfill must cover, the opposite of the granularity goal. **Collapse `trivial` files into
    glob exclusion patterns by directory** (e.g. `**/Dtos/**` → `dto-no-logic`) instead of one
    row each; emit per-file detail only for non-trivial files. **Normalize across chunks** —

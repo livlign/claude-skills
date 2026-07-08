@@ -18,6 +18,11 @@ export const meta = {
 // partitions it and inlines each chunk's items into a worktree agent's prompt (worktrees do not see
 // the untracked coverage/ manifest, so paths must travel in the prompt, not via a file read). This
 // script does not prompt the user.
+// Defensive: the Workflow tool expects `args` as a real JSON object, but a caller that passes it as
+// a JSON-encoded STRING would make every `args.foo` undefined, silently defaulting the worklist path
+// and running ZERO agents (a real field failure). Normalize a stringified payload so a caller mistake
+// degrades to "works" instead of "empty-worklist, nothing ran".
+if (typeof args === 'string') { try { args = JSON.parse(args) } catch (e) { /* leave as-is */ } }
 const concurrency = Math.max(1, Math.floor(Number(args && args.concurrency) || 3))
 const solution = (args && args.solution) || ''
 const worklistManifest = (args && args.worklistManifest) || 'coverage/backfill/worklist.json'
