@@ -96,3 +96,21 @@ Honest-reporting rules baked into the generator (do not "fix" these to mimic a d
 
 Numbers (sections 1–4) are tool output joined deterministically; the model never edits them.
 The full per-file drill-down lives in the HTML report — the Markdown is the executive view.
+
+## Approving a scope change (reviewer sign-off)
+
+The `coverage-scope-change` label is the reviewer sign-off for an intentional scope reduction. It
+maps to `coverage-gate.py --allow-scope-change`. Applying it waives only the **scope-change guard**
+(grown `exclusions`/`cannot_test`, new source under an excluded path) and a **lowered ratchet
+floor**. It does NOT waive diff coverage on changed lines, nor a genuine ratchet drop below the
+recorded floor. Those still fail the gate.
+
+To sign off, **ADD the label** (its name must be exactly `coverage-scope-change`). This is where a
+real reviewer got stuck, so state it plainly:
+- The workflow triggers on `labeled` (see the template), so adding the label **starts a fresh run**
+  whose event payload contains the label. That run reads the label and passes.
+- Do **NOT** click "Re-run jobs" to pick up a just-added label. GitHub "Re-run" replays the
+  ORIGINAL event payload, which had no label, so the `contains(...labels...)` check stays false and
+  the gate fails again, confusingly.
+- If your workflow's trigger lacks `labeled` (an older scaffold), push any commit or toggle the
+  label off and on to force a `synchronize` run whose payload includes the label.
