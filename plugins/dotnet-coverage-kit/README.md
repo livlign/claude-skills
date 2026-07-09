@@ -74,7 +74,9 @@ every file is tested or skipped.
 
 **Step 3 · `coverage-report`** — measure and explain
 - **How:** one command, any time, no arguments — `./.claude/coverage/tools/report.sh` (or run the
-  `coverage-report` skill). It writes a saved `coverage/REPORT.md` and prints it.
+  `coverage-report` skill). It writes a dated per-run folder `reports/<YYYY-MM-DD>/` with
+  `REPORT.md`, `REPORT.html`, and a generated `CANNOT-TEST.md`, and prints the Markdown. Prior
+  dates are preserved for comparison.
 - **What:** it runs the real coverage tools, then produces a short, scannable report built to
   act on: a one-line verdict (pass/fail + the numbers), a **Do next** list of the highest-impact
   files to test (and how many points they'd add), quick insights, and the by-bucket breakdown.

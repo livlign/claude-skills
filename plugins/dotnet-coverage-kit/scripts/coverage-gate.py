@@ -382,6 +382,144 @@ def category_nature(cat):
     return "structural" if canonical_category(cat) in _STRUCTURAL_CATEGORIES else "debt"
 
 
+# CANNOT-TEST.md generation.
+# The standalone cannot-test report groups every manifest `cannot_test` entry by its BLOCKING
+# CONSTRUCT (finer-grained than the coarse manifest `category`), so a reader sees "these 6 are all
+# blocked by the same rowversion insert" rather than a flat list. The bucket for an entry is the
+# first whose keywords appear in its reason/category/mitigation text; unmatched debt entries fall
+# back to a group keyed by their canonical category. Structural-nature entries (dead, unreachable,
+# generated, framework-mismatch) are reported separately, since they are permanent, not seam-fixable.
+_CT_BUCKETS = [
+    ("Unset store-generated rowversion (`Timestamp`) on insert",
+     ["rowversion", "timestamp"]),
+    ("`ExecuteUpdateAsync` / `ExecuteDeleteAsync` (not supported by EF in-memory)",
+     ["executeupdate", "executedelete", "execute update", "execute delete"]),
+    ("linq2db / EFCore.BulkExtensions `Batch*` (relational-only)",
+     ["batchdelete", "batchupdate", "batch*", "linq2db", "bulkextensions", "bulk update", "bulk delete"]),
+    ("Untranslatable LINQ on the in-memory provider",
+     ["untranslatable", "cannot translate", "in-memory provider cannot", "provider-specific linq", "groupby"]),
+    ("Real DB transaction + mid-transaction failure",
+     ["transaction", "begintransaction"]),
+    ("Native crypto (libsodium / scrypt) and nondeterministic nonces",
+     ["sodium", "libsodium", "scrypt", "nonce", "crypto", "hmac", "aes ciphertext"]),
+    ("Concrete external SDK client injected by concrete type",
+     ["cognito", "amazon", "sdk client", "concrete type", "injected by type", "no interface"]),
+    ("Static cache factory / no injection seam (Redis)",
+     ["redis", "cachefactory", "redlock"]),
+    ("Real HTTP / S3 boundaries",
+     ["httpclient", "ihttpclient", "sendasync", "getbytearray", "s3", "is3disk", "real http"]),
+    ("Inline-new DbContext / raw SQL / type-init IO",
+     ["fromsqlraw", "executesqlraw", "raw sql", "inline-new", "inline new", "new context", "readalltext"]),
+    ("DnsClient A-record construction",
+     ["dnsclient", "arecord", "a-record", "dns lookup", "dns positive"]),
+    ("Nondeterministic clock / id (no seam)",
+     ["datetime.utcnow", "datetime.now", "guid.newguid", "stopwatch", "random", "clock", "wall clock"]),
+]
+
+
+def _ct_bucket(ct):
+    hay = " ".join([ct.get("reason", "") or "", ct.get("category", "") or "",
+                    ct.get("mitigation", "") or ""]).lower()
+    for heading, keys in _CT_BUCKETS:
+        if any(k in hay for k in keys):
+            return heading
+    return None  # unmatched: grouped by canonical category by the caller
+
+
+def render_cannot_test_md(cannot_test, repo, report_date, headline=None):
+    """Build the dedicated CANNOT-TEST.md from the manifest cannot_test entries. Cites target,
+    reason, and mitigation from the manifest, and lines only where the manifest supplies them (no
+    invented line numbers). Returns the markdown string."""
+    L = []
+    L.append("# Cannot-Test Report: %s" % repo)
+    L.append("")
+    gen = "Generated %s." % report_date
+    if headline:
+        gen += " Companion to `REPORT.md` (%s)." % headline
+    L.append(gen)
+    L.append("")
+    L.append("This lists every target-layer method or branch that is **genuinely not unit-testable** as "
+             "the source stands, with the source citation from the manifest, the blocking construct, and "
+             "the source change that would unlock it. Every row is a `cannot_test` entry in "
+             "`coverage-manifest.yml`; none is closable by writing another test without a production-source "
+             "change.")
+    L.append("")
+    L.append("## Why these cannot be unit-tested (categories)")
+    L.append("")
+    L.append("The EF in-memory provider is the seam for injected DbContexts, but it cannot execute: "
+             "store-generated rowversion inserts, `ExecuteUpdate/DeleteAsync`, linq2db / EFCore.BulkExtensions "
+             "`Batch*`, raw SQL, real transactions, or some LINQ shapes. Native crypto, concrete external SDK "
+             "clients injected by concrete type, static cache factories, real HTTP/S3, and direct clock/nonce "
+             "also have no seam in characterization mode (no source changes allowed). Each item below cites "
+             "which one applies.")
+    L.append("")
+
+    if not cannot_test:
+        L.append("---")
+        L.append("")
+        L.append("_No `cannot_test` entries recorded in the manifest._")
+        L.append("")
+        return "\n".join(L)
+
+    debt = [ct for ct in cannot_test if category_nature(ct.get("category")) == "debt"]
+    structural = [ct for ct in cannot_test if category_nature(ct.get("category")) == "structural"]
+
+    # Assign debt entries to construct buckets; keep bucket order, then fallback groups.
+    grouped = {}
+    for ct in debt:
+        grouped.setdefault(_ct_bucket(ct), []).append(ct)
+    ordered_headings = [h for h, _ in _CT_BUCKETS if grouped.get(h)]
+    # Unmatched (None): one group per canonical category, appended after the known buckets.
+    for ct in grouped.get(None, []):
+        h = "Other no-seam boundary: `%s`" % (canonical_category(ct.get("category")) or "uncategorized")
+        grouped.setdefault(h, []).append(ct)
+    known = [x for x, _ in _CT_BUCKETS]
+    fallback_headings = sorted(h for h in grouped if h is not None and h not in known)
+
+    def _table(rows):
+        L.append("| Target | Where | Blocking construct | Unlock |")
+        L.append("|--------|-------|--------------------|--------|")
+        for ct in rows:
+            where = ct.get("lines") or "file-level"
+            cat = canonical_category(ct.get("category"))
+            unlock = (ct.get("mitigation") or ACTION.get(cat, "Review")).replace("\n", " ")
+            reason = (ct.get("reason", "") or "").replace("\n", " ")
+            L.append("| `%s` | %s | %s | %s |" % (ct.get("target", "?"), where, reason, unlock))
+        L.append("")
+
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    idx = 0
+    L.append("---")
+    L.append("")
+    for h in ordered_headings + fallback_headings:
+        prefix = letters[idx] if idx < len(letters) else str(idx + 1)
+        L.append("## %s. %s" % (prefix, h))
+        L.append("")
+        _table(grouped[h])
+        idx += 1
+
+    # Structural / dead code: derived rows from the manifest, PLUS a manual-append placeholder,
+    # since branches that are neither testable nor cannot_test cannot be reliably derived here.
+    L.append("---")
+    L.append("")
+    L.append("## Structurally-dead / unreachable defensive code (NOT cannot_test, but permanently uncovered)")
+    L.append("")
+    L.append("Defensive guards or branches that cannot execute given the current callers/contracts. Not "
+             "testable and not seam-fixable; they are dead-branch coverage loss, candidates for deletion.")
+    L.append("")
+    if structural:
+        _table(structural)
+    else:
+        L.append("_None derivable from the manifest. Append manually any uncovered target branch that is "
+                 "structurally unreachable (compiler-lowered, dead, or contract-guaranteed) after reviewing "
+                 "the HTML drill-down._")
+        L.append("")
+    L.append("<!-- MANUAL-APPEND: latent bugs frozen by characterization, and dead branches found in the "
+             "drill-down but not yet in the manifest, go below. The generator does not invent these. -->")
+    L.append("")
+    return "\n".join(L)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cobertura", required=True)
@@ -394,6 +532,7 @@ def main():
     ap.add_argument("--test-results-dir", help="dir containing .trx files for the Test Results section")
     ap.add_argument("--repo-name", help="repo name for the report header")
     ap.add_argument("--html", help="also write the report as a self-contained HTML file at this path")
+    ap.add_argument("--cannot-test-out", help="also write a dedicated, cited CANNOT-TEST.md at this path (derived from the manifest cannot_test entries)")
     ap.add_argument("--tooling", default="Microsoft Code Coverage (dotnet-coverage) + ReportGenerator + xUnit")
     args = ap.parse_args()
     args.base = _safe_ref(args.base)
@@ -948,6 +1087,15 @@ def main():
     if args.html:
         with open(args.html, "w", encoding="utf-8") as fh:
             fh.write(md_to_html(report))
+    if args.cannot_test_out:
+        # report_date follows report.sh's dated folder (REPORT_DATE) so the header matches the path;
+        # falls back to today's local date when the gate is run standalone.
+        report_date = os.environ.get("REPORT_DATE") or now[:10]
+        tests_note = ("%d tests" % tr["total"]) if (tr and tr.get("total")) else "tests not captured"
+        headline = "Adjusted C0 %.1f%% / C1 %.1f%%, %s" % (c0, c1, tests_note)
+        ct_md = render_cannot_test_md(cannot_test, repo, report_date, headline)
+        with open(args.cannot_test_out, "w", encoding="utf-8") as fh:
+            fh.write(ct_md)
     # Gate outcome to stderr only (CI logs / local terminal) — kept out of the report body so the
     # report stays a quality view, not a pass/fail exam. The exit code is what actually enforces.
     if gate_active:

@@ -20,9 +20,14 @@ The whole report is one wrapper — no arguments needed (it auto-detects the `.s
 ./.claude/coverage/tools/report.sh
 ```
 
-It collects coverage, joins it against the manifest, **writes `coverage/REPORT.md`**, prints
-the same Markdown, and exits non-zero if the ratchet fails (so it doubles as a local gate).
-This is the *identical* path CI runs — the report a developer sees locally is the report on
+It collects coverage, joins it against the manifest, and **writes a dated per-run folder
+`.claude/coverage/reports/<YYYY-MM-DD>/` containing `REPORT.md`, `REPORT.html`, and
+`CANNOT-TEST.md`**, then prints the Markdown and exits non-zero if the ratchet fails (so it
+doubles as a local gate). Each run writes its own dated folder rather than overwriting a fixed
+path, so prior dates are preserved for comparison; override the date with `REPORT_DATE=YYYY-MM-DD`
+to re-emit under a specific day. `CANNOT-TEST.md` is generated from the manifest `cannot_test`
+entries (grouped by blocking construct, each row citing target, reason, and unlock), not
+hand-written. This is the *identical* join CI runs — the report a developer sees locally is the report on
 the PR. When invoked as the `coverage-report` skill, just run it and surface the result;
 don't re-derive numbers by hand.
 
