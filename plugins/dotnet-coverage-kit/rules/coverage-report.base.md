@@ -37,6 +37,15 @@ manifest. The report joins the two:
 - File uncovered AND matched by nothing → reported as **uncovered, needs attention**.
   This bucket is the actionable output; it must not be silently absorbed.
 
+## Output artifacts (per run)
+
+`report.sh` writes a dated per-run folder `.claude/coverage/reports/<YYYY-MM-DD>/` holding
+`REPORT.md`, `REPORT.html`, and `CANNOT-TEST.md`. A new run creates a new dated folder rather
+than overwriting, so prior dates stay for comparison (override with `REPORT_DATE=YYYY-MM-DD`).
+`CANNOT-TEST.md` is generated from the manifest `cannot_test` entries, grouped by blocking
+construct, each row citing target, reason, and unlock; it is not hand-written and invents no
+line numbers the manifest does not supply.
+
 ## Report hierarchy
 
 Overall → category → project → file. Categories come from the manifest's `category_map`.

@@ -132,7 +132,7 @@ with a clean working tree. Additionally:
    lower `baseline.recorded_overall` automatically; raising it (once the new gaps are covered) is
    the normal outcome.
 
-9. **New report and comprehensiveness gate.** Regenerate `reports/REPORT.{md,html}` via
+9. **New report and comprehensiveness gate.** Regenerate the dated `reports/<YYYY-MM-DD>/REPORT.{md,html}` + `CANNOT-TEST.md` via
    `report.sh`. Assert `coverage-init` step 11's comprehensiveness gate PLUS the redo-specific
    ones: every enumerated file accounted for, no orphaned test, migration complete (the gate's
    ambiguous-carve-out warning is empty). Report the before/after: files reclassified, carve-outs

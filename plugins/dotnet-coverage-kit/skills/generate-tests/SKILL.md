@@ -239,7 +239,7 @@ misleadingly low floor.
 
 **Measure via the wrapper, not by hand.** When you do measure, run the one-command wrapper
 `./.claude/coverage/tools/report.sh` (it collects with the repo filefilter, joins the manifest, and
-**persists `coverage/REPORT.md`**). Do NOT hand-run `run-coverage.sh` + `coverage-gate.py` and
+**persists a dated `reports/<YYYY-MM-DD>/REPORT.{md,html}` + `CANNOT-TEST.md`**). Do NOT hand-run `run-coverage.sh` + `coverage-gate.py` and
 read the numbers off stdout — that leaves no saved report and skips the repo scoping, so the
 report effectively goes missing. If `report.sh` isn't installed yet (repo pre-dates it), copy
 it from `${CLAUDE_PLUGIN_ROOT}/scripts/report.sh` first, then run it. Only after `REPORT.md`

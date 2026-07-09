@@ -360,7 +360,8 @@ State the branch and commit you initialized against in the step 11 report, so th
    - `.claude/coverage/tools/coverage-gate.py` — copied from the kit's `scripts/`. The in-scope
      join + gate + Unit Test Report CI runs after `run-coverage.sh` (needs Python + PyYAML).
    - `.claude/coverage/tools/report.sh` — copied from the kit's `scripts/`. One-command wrapper
-     (collect + gate + write `reports/REPORT.{md,html}`). It resolves `../refs` and `../reports`
+     (collect + gate + write a dated `reports/<YYYY-MM-DD>/` with `REPORT.{md,html}` + generated
+     `CANNOT-TEST.md`, one folder per run). It resolves `../refs` and `../reports`
      relative to itself, so the tools/refs/reports split is a hard contract — keep the scripts in
      `tools/` and config in `refs/`.
    - `.claude/coverage/refs/unit-testing.md` — the per-repo overlay. Starts as a pointer to the
