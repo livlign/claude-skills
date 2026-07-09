@@ -1,11 +1,26 @@
 # .github/workflows/coverage.yml
-# Scaffolded by coverage-init. Adjust <solution.sln>, dotnet-version, branch name, and
-# the --repo-filter (this repo's path substring, used to scope the denominator).
+# Scaffolded by coverage-init. Runs the SAME run-coverage.sh + coverage-gate.py you run locally, so
+# the PR sees exactly what you see. Gate = diff coverage + ratchet + scope guard.
+#
+# Fill every <PLACEHOLDER>. Two blocks are for PRIVATE repos and are clearly marked:
+#   * "PRIVATE NuGet feed (AWS CodeArtifact)"  : delete if your feed is public or not CodeArtifact.
+#   * "PRIVATE sibling repos"                  : delete if the solution has no cross-repo references
+#                                                or all siblings are public.
+# Leaving them commented is safe; a private repo WILL fail restore/checkout until you enable them.
 name: Coverage
 
 on:
   pull_request:
     branches: [master]   # only PRs whose target (base) branch is master
+    # 'labeled' is included so that applying the scope-change sign-off label (coverage-scope-change)
+    # re-runs the gate automatically, with no manual re-run. The other three are the normal triggers.
+    types: [opened, synchronize, reopened, labeled]
+
+# id-token:write is required for the AWS OIDC step below (mint a short-lived token for CodeArtifact);
+# contents:read is for actions/checkout. Safe to keep even if you delete the CodeArtifact block.
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   coverage:
@@ -17,15 +32,33 @@ jobs:
           # If this solution references SIBLING repos via relative ProjectReference paths
           # (e.g. ..\..\..\<sibling>\...), set `path: <this-repo>` here and check the siblings
           # out beside it so the relative paths resolve. coverage-init fills this block when it
-          # detects cross-repo references:
+          # detects cross-repo references. NOTE: if you set `path:`, add
+          # `working-directory: <this-repo>` to the Fetch/Coverage/gate steps below.
           # path: <this-repo>
-      # - name: Checkout <sibling-repo>            # one per referenced sibling; remove if none
+
+      # --- PRIVATE sibling repos (DELETE this whole block if there are no cross-repo references, or
+      # the siblings are public). A private sibling CANNOT be cloned by an unauthenticated checkout.
+      # Authenticate with a GitHub App token (preferred: short-lived, scoped) OR a PAT secret. ---
+      # - name: Create GitHub App token (for private sibling checkout)
+      #   id: app-token
+      #   uses: actions/create-github-app-token@v1
+      #   with:
+      #     app-id: ${{ secrets.APP_ID }}
+      #     private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      #     owner: <ORG>
+      #     repositories: |
+      #       <sibling-repo-1>
+      #       <sibling-repo-2>
+      # - name: Checkout <sibling-repo-1>
       #   uses: actions/checkout@v4
       #   with:
-      #     repository: ${{ github.repository_owner }}/<sibling-repo>
-      #     path: <sibling-repo>
+      #     repository: <ORG>/<sibling-repo-1>
+      #     path: <sibling-repo-1>
       #     ref: master
-      #     # token: ${{ secrets.CI_REPO_TOKEN }}  # add if the sibling repo is private
+      #     token: ${{ steps.app-token.outputs.token }}   # or a PAT: ${{ secrets.CI_REPO_TOKEN }}
+      # (repeat one Checkout block per sibling. If a sibling references FURTHER siblings, add those
+      #  too, or the solution will not build and the gate never runs.)
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -34,14 +67,36 @@ jobs:
           python-version: '3.x'
       - run: pip install --quiet pyyaml
 
-      # Collects coverage per test project and writes coverage/html/Cobertura.xml (repo-scoped
-      # via the file filter). Scripts live under .claude/coverage/tools/, config under refs/.
+      # --- PRIVATE NuGet feed via AWS CodeArtifact (DELETE this whole block if your feed is public,
+      # or if you use a different private feed: replace with that feed's auth). Without it,
+      # `dotnet restore` 401s against a private feed. Uses GitHub OIDC, so no long-lived AWS keys. ---
+      # - name: Configure AWS credentials (OIDC)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}   # TODO: the OIDC role ARN (repo secret)
+      #     aws-region: <AWS_REGION>                            # TODO e.g. ap-southeast-1
+      # - name: Login to AWS CodeArtifact
+      #   run: |
+      #     aws codeartifact login --tool dotnet \
+      #       --domain <CA_DOMAIN> --domain-owner <CA_DOMAIN_OWNER> --repository <CA_REPOSITORY>
+
+      # Make the base branch available to `git diff` as origin/<base>, so diff-coverage works.
+      - name: Fetch base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=0 origin "$BASE_REF:refs/remotes/origin/$BASE_REF" || git fetch origin "$BASE_REF"
+
+      # Collects coverage per test project and writes coverage/html/Cobertura.xml (repo-scoped via
+      # the file filter). Scripts live under .claude/coverage/tools/, config under refs/.
+      # run-coverage.sh hard-fails if a discovered test project is missing from the solution or emits
+      # no results, so a silent undercount cannot slip through.
       - name: Coverage
         run: ./.claude/coverage/tools/run-coverage.sh <solution.sln> ./coverage .claude/coverage/refs/coverage.runsettings "+*<repo-path-substring>*"
 
       # Full gate: ratchet + diff coverage on changed lines + scope-change guard. Publishes the
       # report to the PR summary and FAILS the job on any gate breach.
-      # A maintainer can intentionally reduce scope by adding the label below to the PR.
+      # A maintainer can intentionally reduce scope by adding the 'coverage-scope-change' label to
+      # the PR; the 'labeled' trigger above makes that re-run the gate automatically.
       - name: Coverage gate
         # base_ref is passed via env (not interpolated into the shell) to avoid script injection;
         # coverage-gate.py additionally allowlists the ref before it reaches git.
@@ -56,6 +111,7 @@ jobs:
           python .claude/coverage/tools/coverage-gate.py \
             --cobertura coverage/html/Cobertura.xml \
             --manifest .claude/coverage/refs/coverage-manifest.yml \
+            --test-results-dir coverage/results \
             --base "origin/$BASE_REF" \
             $ALLOW \
             --summary "$GITHUB_STEP_SUMMARY"

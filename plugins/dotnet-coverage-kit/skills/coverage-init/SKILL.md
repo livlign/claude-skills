@@ -380,7 +380,17 @@ State the branch and commit you initialized against in the step 11 report, so th
      committed config + the report snapshot.
 
 9. **Scaffold the PR coverage workflow — without clobbering or duplicating existing CI.**
-   First inspect `.github/workflows/` for existing workflow files. Decide, in this order:
+   **First, verify every test project is a member of the target `.sln`.** Compare the discovered
+   test projects (those referencing `Microsoft.NET.Test.Sdk`) against `dotnet sln <solution> list`.
+   CI does a clean `dotnet build <solution>` then `dotnet test <proj> --no-build`, so a test project
+   that is NOT in the solution is never built and runs 0 tests while still exiting 0: a silent,
+   misleading undercount (a real onboarding ran 596 of 2004 tests and reported 35% instead of
+   82.9%). For any test project missing from the solution, tell the user to add it
+   (`dotnet sln <solution> add <project>`) before relying on CI, and list the missing projects in
+   the step 11 report. `run-coverage.sh` now hard-fails on this, so an unfixed one breaks CI loudly
+   rather than undercounting, but catching it here avoids a red first run.
+
+   Then inspect `.github/workflows/` for existing workflow files. Decide, in this order:
 
    - **A coverage workflow already exists** (a `coverage.yml`, or any workflow that already
      runs `run-coverage.sh`) → do **not** overwrite or add a second one. Report it; at most
@@ -430,6 +440,9 @@ State the branch and commit you initialized against in the step 11 report, so th
      passed for all such files, not a sample).
    - **The critique loop has settled.** No clear-cut mismatch remains; only genuine gray-zone
      questions are left, and those are carried into the report as explicit questions.
+   - **Every test project is a solution member.** `dotnet sln <solution> list` includes each
+     discovered `Microsoft.NET.Test.Sdk` project. Any that is missing is called out in the report
+     with the `dotnet sln add` fix, because CI would otherwise silently undercount (see step 9).
 
    State in the report that this gate passed, with the file counts. Only genuine ambiguity is
    deferred to the human — incompleteness is not.
