@@ -7,6 +7,13 @@
 #   * "PRIVATE sibling repos"                  : delete if the solution has no cross-repo references
 #                                                or all siblings are public.
 # Leaving them commented is safe; a private repo WILL fail restore/checkout until you enable them.
+#
+# Approving a scope change: the 'coverage-scope-change' label is the reviewer sign-off for a
+# lowered floor or grown exclusions/cannot_test (it maps to coverage-gate.py --allow-scope-change;
+# it does NOT waive diff coverage or a genuine ratchet drop). To sign off, ADD the label: the
+# 'labeled' trigger below starts a fresh run whose payload carries the label. Do NOT use "Re-run
+# jobs" to pick up a just-added label: GitHub replays the original, label-less payload, so the
+# guard stays active and the gate fails again.
 name: Coverage
 
 on:
