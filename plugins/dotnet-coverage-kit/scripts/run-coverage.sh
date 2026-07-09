@@ -46,6 +46,32 @@ if [[ ${#TEST_PROJECTS[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# Guard against the SILENT-UNDERCOUNT trap. A discovered test project that is NOT a member of the
+# solution never gets built by `dotnet build <sln>`, so `dotnet test --no-build` finds no fresh
+# output, runs 0 tests, and still exits 0: a misleadingly low number with no error. (Real incident:
+# 2 of 6 test projects were missing from the .sln, so CI ran 596 of 2004 tests and reported 35%
+# instead of 82.9%.) Fail loudly here instead of trusting the low number.
+# `dotnet sln list` prints project paths as stored in the .sln (backslashes on Windows-authored
+# solutions), so normalize separators and compare by filename, which is stable across OSes.
+SLN_LIST="$(dotnet sln "$SOLUTION" list 2>/dev/null | tr '\\' '/')"
+MISSING=()
+for proj in "${TEST_PROJECTS[@]}"; do
+  base="$(basename "$proj")"
+  if ! printf '%s\n' "$SLN_LIST" | grep -qiE "(^|/)${base}$"; then
+    MISSING+=("$proj")
+  fi
+done
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  {
+    echo "ERROR: the following test project(s) are NOT members of $SOLUTION."
+    echo "A clean checkout never builds them, so coverage would silently undercount"
+    echo "(dotnet test --no-build runs 0 tests and still exits 0):"
+    for p in "${MISSING[@]}"; do echo "  - $p"; done
+    echo "Fix: add each to the solution, e.g. dotnet sln \"$SOLUTION\" add <project>, then re-run."
+  } >&2
+  exit 1
+fi
+
 dotnet build "$SOLUTION" -c Debug --nologo
 for proj in "${TEST_PROJECTS[@]}"; do
   echo ">> coverage: $proj"
@@ -56,6 +82,21 @@ for proj in "${TEST_PROJECTS[@]}"; do
     --logger "trx" \
     ${TEST_FILTER:+--filter "$TEST_FILTER"}
 done
+
+# Backstop: every discovered test project must have produced a .trx. `dotnet test --logger trx`
+# writes one .trx per invocation, so fewer .trx files than test projects means a project ran
+# nothing (built but collected 0 results, or errored before producing output). A zero-result run
+# for a project that has test attributes is a failure, not a pass, so do not let the report proceed.
+TRX_COUNT="$(find "$RESULTS_DIR" -name '*.trx' 2>/dev/null | wc -l | tr -d '[:space:]')"
+if [[ "${TRX_COUNT:-0}" -lt "${#TEST_PROJECTS[@]}" ]]; then
+  {
+    echo "ERROR: expected at least ${#TEST_PROJECTS[@]} .trx result file(s) (one per discovered test"
+    echo "project) under $RESULTS_DIR, but found ${TRX_COUNT:-0}. A test project produced no results:"
+    echo "it likely built but ran 0 tests, or failed before emitting a .trx. Investigate before"
+    echo "trusting the coverage number (this is the silent-undercount trap)."
+  } >&2
+  exit 1
+fi
 
 # ReportGenerator merges multiple cobertura inputs natively. Do NOT use `dotnet-coverage merge`
 # here: it does not accept cobertura as an INPUT format and silently emits an empty report.
