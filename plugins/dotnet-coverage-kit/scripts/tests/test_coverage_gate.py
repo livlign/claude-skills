@@ -190,6 +190,41 @@ def main():
         fails += check("hotspot: suppression noted", "already logged in section 6" in hot, hot)
         fails += check("hotspot: exactly 1 in-scope gap", "1 of these sit in a target bucket" in hot, hot)
 
+        # Kit-drift note. The fixture manifest carries no `kit_version:`, so an unstamped repo must
+        # say so by itself: the whole point is that nobody has to think of asking.
+        fails += check("drift: unstamped note present", "Kit updates may be pending" in out, out)
+
+        def rerun_with(extra_manifest_lines):
+            man2 = os.path.join(d, "m2.yml")
+            open(man2, "w").write(MANIFEST + extra_manifest_lines)
+            return subprocess.run(
+                [sys.executable, os.path.abspath(GATE),
+                 "--cobertura", cob, "--manifest", man2, "--test-results-dir", "trx",
+                 "--repo-name", "fixture"],
+                cwd=d, capture_output=True, text=True).stdout
+
+        def drift_state(extra_manifest_lines):
+            man2 = os.path.join(d, "m3.yml")
+            open(man2, "w").write(MANIFEST + extra_manifest_lines)
+            return subprocess.run(
+                [sys.executable, os.path.abspath(GATE), "--manifest", man2, "--print-kit-drift"],
+                cwd=d, capture_output=True, text=True).stdout.split()
+
+        cur = drift_state("")
+        behind_out = rerun_with('\nkit_version: "0.4.0"\n')
+        fails += check("drift: behind names coverage-redo",
+                       "Kit updates pending" in behind_out and "coverage-redo" in behind_out, behind_out)
+        current_out = rerun_with('\nkit_version: "%s"\n' % cur[2])
+        fails += check("drift: current emits no note",
+                       "Kit updates" not in current_out and "Stale tool copies" not in current_out,
+                       current_out)
+        fails += check("drift: query mode states",
+                       drift_state("")[0] == "unstamped"
+                       and drift_state('\nkit_version: "0.4.0"\n')[0] == "behind"
+                       and drift_state('\nkit_version: "%s"\n' % cur[2])[0] == "current"
+                       and drift_state('\nkit_version: "99.0.0"\n')[0] == "ahead",
+                       " ".join(drift_state("")))
+
         if fails:
             print("\n%d check(s) FAILED (gate exit %d)" % (fails, r.returncode))
             if r.stderr:

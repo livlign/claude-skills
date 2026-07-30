@@ -382,7 +382,11 @@ State the branch and commit you initialized against in the step 11 report, so th
      (pre-critique) classification and noted as pending in the step 11 report. Keep the template's
      `target` block (default C0 95% / C1 85% on the Adjusted slice) as the coverage goal, and set
      `gate.diff_coverage_min_*` to match it so new code lands at the target. Confirm the goal with
-     the user in the step 11 report (a thin Adjusted slice may not sustain 95% C1).
+     the user in the step 11 report (a thin Adjusted slice may not sustain 95% C1). **Stamp
+     `kit_version:`** with the current kit version, read from the `dotnet-coverage-kit` entry in
+     `${CLAUDE_PLUGIN_ROOT}/../../.claude-plugin/marketplace.json`. A fresh init is by definition at
+     the current version, and the stamp is what lets a later `coverage-redo` upgrade the repo as a
+     bounded delta (`MIGRATIONS.md`) instead of re-walking every past migration.
    - `.claude/coverage/refs/coverage.runsettings` — copied from the kit template.
    - `.claude/coverage/tools/run-coverage.sh` — copied from the kit's `scripts/`. Committed so CI
      (which does not run Claude Code) can invoke it at a stable path, identical to local runs.

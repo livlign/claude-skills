@@ -1,6 +1,6 @@
 ---
 name: coverage-redo
-description: "Re-audit and reconcile a repo that was already onboarded with an OLDER version of this kit. Use when a repo already has a coverage-manifest.yml, generated tests, and a report, and you want to redo/re-run/recheck/reconcile/upgrade/migrate it against the current classification rules: re-sweep to spot misclassifications (false exclusions such as DbContext-injected services wrongly frozen, mixed folders collapsed to one glob), correct the manifest in place, migrate it to the current schema, generate tests only for the newly-found gaps while keeping existing tests intact, and write a fresh report. Triggers: 'redo coverage', 're-run coverage-init', 'recheck the manifest', 'reconcile coverage', 'upgrade the manifest', 'fix an old manifest', 'the manifest is from v1'."
+description: "Re-audit and reconcile a repo that was already onboarded with an OLDER version of this kit, and apply every kit update since. Use when a repo already has a coverage-manifest.yml, generated tests, and a report, and you want to redo/re-run/recheck/reconcile/upgrade/migrate it against the current rules, or to pull in new kit features (latent-bug backlog, vendored-path scoping, baseline scope_lines, dated reports, structured carve-outs): works out the version delta from MIGRATIONS.md and applies it, re-sweeps to spot misclassifications (false exclusions such as DbContext-injected services wrongly frozen, mixed folders collapsed to one glob), corrects the manifest in place, migrates it to the current schema, generates tests only for the newly-found gaps while keeping existing tests intact, and writes a fresh report. Triggers: 'the new dotnet-coverage-kit has new updates, review and apply it to this repo', 'apply the kit updates to this repo', 'the kit was updated', 'upgrade the kit here', 'redo coverage', 're-run coverage-init', 'recheck the manifest', 'reconcile coverage', 'upgrade the manifest', 'fix an old manifest', 'the manifest is from v1'."
 ---
 
 # coverage-redo
@@ -10,6 +10,12 @@ against today's rules, corrects the existing manifest rather than replacing it, 
 the current schema, fills only the gaps in test coverage, and regenerates the report. It is the
 idempotent successor to `coverage-init` for repos that already have a manifest, tests, and a
 report.
+
+It is also the **kit-upgrade entry point**. "The kit has new updates, review and apply them to this
+repo" is this skill, run as a version delta: step 1 works out which kit changes this repo has not
+picked up (from `MIGRATIONS.md`) and the rest of the steps apply them. There is no separate upgrade
+command and no per-feature request to make: every change since the repo's recorded `kit_version:`
+is in scope for one run.
 
 Use `coverage-init` instead when there is NO manifest yet (greenfield). Use this skill when a
 manifest exists and may be stale, because the classification rules have improved since it was
@@ -57,11 +63,29 @@ with a clean working tree. Additionally:
 
 ## Steps
 
-1. **Detect the prior state.** Record what exists: the manifest (and any `schema_version`), the
-   test projects and roughly how many tests, the last report, and, if discoverable, which kit
-   version produced them. Note whether the manifest uses legacy prose `CARVE-OUT:` (a v1 signal)
-   and whether any exclusion is a folder glob carrying carve-outs (an ambiguity the current gate
-   flags).
+1. **Detect the prior state and compute the kit-version delta.** Record what exists: the manifest
+   (and any `schema_version`), the test projects and roughly how many tests, the last report, and
+   whether the manifest uses legacy prose `CARVE-OUT:` (a v1 signal) or an exclusion that is a folder
+   glob carrying carve-outs (an ambiguity the current gate flags).
+
+   Then build the delta, which is what makes "apply the new kit updates" a bounded run. Start with
+   the deterministic check (`coverage-gate.py --manifest <manifest> --print-kit-drift`, which prints
+   `<current|behind|unstamped|ahead> <manifest stamp> <kit semver>`), then:
+   - Read the repo's `kit_version:` from the top of the manifest. Absent means the repo predates the
+     stamp: walk **every** entry in `MIGRATIONS.md`.
+   - Read the current kit version from `${CLAUDE_PLUGIN_ROOT}/../../.claude-plugin/marketplace.json`
+     (the `dotnet-coverage-kit` entry). If it equals the manifest's stamp, still run each entry's
+     **Detect** check once: a stamp only records what was applied, and a hand-edited manifest can
+     have drifted.
+   - Walk `${CLAUDE_PLUGIN_ROOT}/MIGRATIONS.md` from the repo's version forward and run every
+     entry's **Detect** check against this repo. Detection is authoritative; the version is only an
+     ordering hint.
+   - Report the delta as one list up front: which entries apply, which are already satisfied.
+     Entries marked `auto` you apply yourself in the steps below. Entries marked `sign-off` are
+     folded into the SINGLE manifest confirmation in step 6, never asked one at a time.
+
+   **This step is the review the user asked for. Do not stop here for permission to continue**: the
+   only gate is step 6.
 
 2. **Re-sweep the whole repo.** Run the classification sweep EXACTLY as `coverage-init` step 4:
    enumerate every source file, clear `coverage/sweep/`, write `files.json`, and run the
@@ -72,7 +96,9 @@ with a clean working tree. Additionally:
 
 3. **Diff the sweep against the existing manifest (single, at main).** Read the on-disk evidence
    (`coverage/sweep/chunk-*.json`) and the current manifest. Produce a reconciliation, not a
-   rewrite. Classify every delta into:
+   rewrite. Apply **every `MIGRATIONS.md` entry whose Detect check fired in step 1** in this same
+   pass: the bullets below spell out the ones that come up most often, and the ledger is the complete
+   list (the ledger wins if the two ever disagree). Classify every delta into:
    - **False exclusion to fix:** the sweep found a testable method inside a file the manifest
      excludes (the DbContext-injected-service case, a mixed folder collapsed to one glob, a
      branching validator under a `**/Model/**` glob). Add the carve-out, or promote the file to
@@ -129,10 +155,12 @@ with a clean working tree. Additionally:
    remain). Reconcile clear-cut corrections in a loop; leave only genuine gray zones.
 
 6. **Write the corrected manifest and STOP for confirmation.** Write the reconciled, migrated
-   manifest (do not clobber without showing the diff). Present the diff grouped as: false
-   exclusions fixed, schema migrations, entries preserved, and open questions. Ask the user to
-   confirm or correct before any test is generated. This is the hard gate: do not proceed to
-   step 7 in the same turn without confirmation.
+   manifest (do not clobber without showing the diff). Present the diff grouped as: kit updates
+   applied (each `MIGRATIONS.md` entry, with its version and whether it was `auto` or needs
+   sign-off), false exclusions fixed, schema migrations, entries preserved, and open questions. Every
+   `sign-off` item from the delta is presented HERE, in this one gate, together with the sweep
+   corrections. Ask the user to confirm or correct before any test is generated. This is the hard
+   gate: do not proceed to step 7 in the same turn without confirmation.
 
 7. **Generate tests for the NEW gaps only, and run it to completion.** Run `generate-tests` in
    characterization mode (this is existing code: freeze current behavior) with the reconciled
@@ -162,8 +190,15 @@ with a clean working tree. Additionally:
    `report.sh`. Assert `coverage-init` step 11's comprehensiveness gate PLUS the redo-specific
    ones: every enumerated file accounted for, no orphaned test, migration complete (the gate's
    ambiguous-carve-out warning is empty). Report the before/after: files reclassified, carve-outs
-   added, tests generated, tests reused unchanged, and the coverage delta. Stop and hand the
-   human the summary and any open questions.
+   added, tests generated, tests reused unchanged, and the coverage delta.
+
+   **Stamp `kit_version:` at the top of the manifest** with the version read in step 1, and list
+   every `MIGRATIONS.md` entry applied in this run. The stamp is what makes the NEXT upgrade a small
+   delta instead of a full walk, so it is written only after the entries actually landed: never stamp
+   a version whose entries were skipped, deferred, or left as open questions. If the user declined a
+   `sign-off` item, keep the older stamp and say which entry is still outstanding.
+
+   Then stop and hand the human the summary and any open questions.
 
 ## What this skill reuses (do not re-specify)
 
@@ -175,6 +210,7 @@ with a clean working tree. Additionally:
 - Measurement, the report, and the baseline contract: `coverage-report` and `coverage-gate.py`.
 
 ## Base references
+- `${CLAUDE_PLUGIN_ROOT}/MIGRATIONS.md` (the version-delta ledger read in step 1)
 - `${CLAUDE_PLUGIN_ROOT}/skills/coverage-init/SKILL.md`
 - `${CLAUDE_PLUGIN_ROOT}/skills/generate-tests/SKILL.md`
 - `${CLAUDE_PLUGIN_ROOT}/skills/coverage-report/SKILL.md`

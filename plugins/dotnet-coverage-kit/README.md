@@ -148,6 +148,32 @@ Per repo (created by `coverage-init`, owned by your team):
 existing manifest (it does not overwrite it), generates tests only for the newly-found gaps
 while keeping your existing tests intact, and writes a fresh report.
 
+### Pulling in kit updates
+
+**You do not have to ask.** Every kit run checks whether the repo is on the current version, so a
+repo left behind says so by itself: `report.sh` prints `KIT_DRIFT=` before it collects, and the
+report carries a note naming what to run. `generate-tests` goes further and applies the updates that
+govern how a backfill runs (refreshed tools, fan-out contract, frozen-bug recording) before spending
+a pass on superseded mechanics. Nothing that could move a coverage number is ever applied without
+the confirmation described below.
+
+To apply everything, say this in the repo and the whole delta is reviewed and applied in one run:
+
+> the new dotnet-coverage-kit has new updates, review and apply it to this repo
+
+That runs `coverage-redo` as a version delta. It reads the `kit_version:` stamp at the top of the
+repo's manifest, walks [`MIGRATIONS.md`](MIGRATIONS.md) from there forward, and applies every entry
+whose on-disk check says the repo still needs it: newer scoping rules, the latent-bug backlog, the
+`baseline.scope_lines` stamp, dated reports, structured carve-outs, refreshed tool copies. You do
+not name the features, and you are not asked about them one by one.
+
+There is exactly **one** stop for you: the corrected manifest. Anything that could move what is
+measured, the floor, or the exclusion set is presented there together, with a reason each; purely
+mechanical updates are applied without asking and listed in the closing report. Confirm it once and
+the rest (test backfill for the newly-found gaps, re-measure, fresh report, re-stamp `kit_version:`)
+runs to completion. If you decline part of it, the stamp stays where it was and the report names what
+is still outstanding, so the next run picks it up again.
+
 ## Seeing the report on GitHub
 
 The `coverage/` folder is generated and git-ignored, so it only exists on the machine that

@@ -43,6 +43,9 @@ else
     --repo-root . ${REPO_FILTER:+--repo-filter "$REPO_FILTER"})"
 fi
 echo "KIT_VERSION=$(python "$HERE/coverage-gate.py" --manifest "$MANIFEST" --print-kit-version)"
+# Printed before the (slow) collect so a repo left behind on an older kit is visible immediately,
+# not only in the finished report. Format: `<state> <manifest stamp> <kit semver>`.
+echo "KIT_DRIFT=$(python "$HERE/coverage-gate.py" --manifest "$MANIFEST" --print-kit-drift)"
 echo "FILE_FILTER=$FILE_FILTER"
 
 # 2. Collect (auto-detects the .sln if not passed).

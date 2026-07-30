@@ -39,7 +39,13 @@ don't re-derive numbers by hand.
    numbers. All numbers come from the tool + the deterministic join in `coverage-gate.py`; the
    model does not parse XML or compute percentages.
 
-   The script prints `KIT_VERSION=` and `FILE_FILTER=` before collecting. **Check both.** If
+   The script prints `KIT_VERSION=`, `KIT_DRIFT=` and `FILE_FILTER=` before collecting. **Check all
+   three.** `KIT_DRIFT=` is `<state> <manifest kit_version> <kit semver>`: any state other than
+   `current` means this repo has not been reconciled against the current kit, and the report carries
+   a note saying so. **Surface it in one line and name `coverage-redo` as what applies it. Do not
+   apply any migration here**: a report that quietly changed the measured scope would make its own
+   numbers unreproducible. The one exception is the stale-tool-copy refresh below, which changes no
+   classification. See `${CLAUDE_PLUGIN_ROOT}/MIGRATIONS.md` ("Preflight"). If
    `KIT_VERSION` is behind `${CLAUDE_PLUGIN_ROOT}/scripts/coverage-gate.py`, the repo's copies
    under `.claude/coverage/tools/` are stale: say so and offer to refresh them, because a
    half-updated copy can run the whole suite and only then fail. If `FILE_FILTER` lacks an

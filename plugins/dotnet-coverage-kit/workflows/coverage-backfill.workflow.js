@@ -75,7 +75,7 @@ log(`${worklist.length} worklist items -> ${chunks.length} chunk(s); ${concurren
 
 const CHUNK_RESULT = {
   type: 'object',
-  required: ['chunkIndex', 'filesCovered', 'cannotTest', 'observations', 'patch', 'allGreen'],
+  required: ['chunkIndex', 'filesCovered', 'cannotTest', 'latentBugs', 'patch', 'allGreen'],
   properties: {
     chunkIndex: { type: 'integer' },
     filesCovered: { type: 'array', items: { type: 'string' } },
@@ -94,12 +94,22 @@ const CHUNK_RESULT = {
         },
       },
     },
-    observations: {
+    // Suspected product defects frozen by a characterization test. Shaped to match manifest
+    // `latent_bugs:` field-for-field so the assemble step can write them straight in. The previous
+    // free-form `observations` bag was returned but never persisted, so every finding died with the run.
+    latentBugs: {
       type: 'array',
+      description: 'Suspected latent bugs frozen (asserted as-is), never fixed. One entry per defect. Empty array if none.',
       items: {
         type: 'object',
-        required: ['target', 'whatLookedWrong'],
-        properties: { target: { type: 'string' }, whatLookedWrong: { type: 'string' } },
+        required: ['severity', 'target', 'summary', 'pinnedBy'],
+        properties: {
+          severity: { type: 'string', enum: ['A', 'B', 'C', 'D', 'E'], description: 'A security/cross-tenant · B data loss · C unhandled 500 · D correctness/observability · E dead code or note, not a defect' },
+          target: { type: 'string', description: 'the method, e.g. OrderRepository.DeleteAsync' },
+          file: { type: 'string', description: 'optional source location, e.g. src/Data/OrderRepository.cs:214' },
+          summary: { type: 'string', description: 'what is wrong and its consequence, one sentence' },
+          pinnedBy: { type: 'string', description: 'the test name that freezes the behaviour, so a correct fix knows which assertion to update' },
+        },
       },
     },
     patch: { type: 'string', description: 'unified diff (git diff --cached) of the test files added in the worktree; empty if nothing was written' },
@@ -145,10 +155,11 @@ function generatePrompt(chunk, i) {
     '- Every cannotTest entry is scoped to a METHOD (never a whole file/folder) and MUST carry a mitigation: the source change that would unlock it, or "none — genuinely nondeterministic external boundary".',
     '- New/changed-after-baseline code -> SPEC mode: expected values come from intended behavior, not from running the code.',
     '- PATTERN-REPLICATE: if several items are structurally identical, solve the mock/fixture setup once and replicate the shape across the siblings.',
-    '- Do NOT modify production source. Do NOT edit the manifest (return cannot_test entries as data; the assemble step writes them once). Name tests Method_Scenario_Expected and mirror source folder structure.',
+    '- SUSPECTED BUGS ARE FROZEN, NOT FIXED, AND NEVER DROPPED. When a captured value looks wrong (a filter ignored, a tenant/studio scope missing, an exception escaping, a swallowed error), still pin the ACTUAL value so the test is green, then return it as a `latentBugs` entry: { severity A-E, target, file, summary, pinnedBy (the test name that freezes it) }. This is the ONLY channel that survives your worktree: a finding left in prose is lost when this chunk ends. Return an empty array only if you genuinely suspect nothing.',
+    '- Do NOT modify production source. Do NOT edit the manifest (return cannot_test and latentBugs entries as data; the assemble step writes them once). Name tests Method_Scenario_Expected and mirror source folder structure.',
     '',
     'When your chunk is green, stage your additions and capture the diff so the assemble step can apply it to the main tree: run `git add -A` then `git diff --cached` and put that text in `patch`.',
-    'Return the structured result: filesCovered, cannotTest, observations (suspected latent bugs — frozen, not fixed), patch, allGreen.',
+    'Return the structured result: filesCovered, cannotTest, latentBugs (suspected defects frozen, not fixed), patch, allGreen.',
   ].join('\n')
 }
 
@@ -185,13 +196,20 @@ if (flagged.length) log(`${flagged.length} chunk(s) flagged by verify — surfac
 phase('Assemble')
 const allPatches = ok.filter(r => r.patch).map(r => r.patch)
 const allCannotTest = ok.flatMap(r => r.cannotTest || [])
+// Every chunk's frozen-bug findings, merged once here. Written to the manifest in the same step as
+// cannot_test: the manifest is the only place `coverage-gate.py` reads them from, and an unwritten
+// entry means a green suite silently reads as a correct one.
+const allLatentBugs = ok.flatMap(r => r.latentBugs || [])
+if (allLatentBugs.length) log(`${allLatentBugs.length} suspected latent bug(s) frozen by the backfill, being written to manifest \`latent_bugs:\` (report section 7).`)
 const assemblePrompt = [
   'You are assembling a parallel .NET test backfill in the MAIN working tree (not a worktree).',
   '1. Apply each chunk patch below with `git apply`. They touch distinct test files, so they should not conflict; report any patch that fails to apply instead of forcing it.',
   '2. Append these cannot_test entries to .claude/coverage/refs/coverage-manifest.yml (dedup by target), preserving ALL fields on each entry (target, category, lines, reason, mitigation) so report §6 can render the mitigation plan:',
   JSON.stringify(allCannotTest, null, 2),
-  `3. Run the full suite once (dotnet test ${solution || '<solution>'}) and confirm it is green.`,
-  '4. Do NOT run coverage-report, do NOT set the baseline, do NOT commit — leave the tree dirty per the promotion gate.',
+  '3. Append these suspected latent bugs to the `latent_bugs:` list in the SAME manifest (create the key if absent; dedup by target+summary; keep existing entries). Map each field verbatim, renaming only `pinnedBy` -> `pinned_by`, so each entry is `{ severity, target, file?, summary, pinned_by }`. This write is MANDATORY whenever the list below is non-empty: `latent_bugs:` is the only source `coverage-gate.py` renders section 7 and the top-of-report ACTION REQUIRED banner from, and a finding that is not written here is lost. Do NOT fix any of these bugs, do NOT touch the tests that pin them, and do NOT put them in CANNOT-TEST.md or report prose (both are regenerated). Confirm in your report how many entries you wrote and that the YAML still parses:',
+  JSON.stringify(allLatentBugs, null, 2),
+  `4. Run the full suite once (dotnet test ${solution || '<solution>'}) and confirm it is green.`,
+  '5. Do NOT run coverage-report, do NOT set the baseline, do NOT commit. Leave the tree dirty per the promotion gate.',
   '',
   'PATCHES (apply in order):',
   ...allPatches.map((p, n) => `----- patch ${n + 1} -----\n${p}`),
@@ -203,8 +221,12 @@ return {
   concurrency,
   chunks: chunks.length,
   itemsPlanned: worklist.length,
-  chunkResults: ok.map(r => ({ chunkIndex: r.chunkIndex, filesCovered: r.filesCovered, allGreen: r.allGreen, cannotTest: r.cannotTest, observations: r.observations, verify: r.verify })),
+  chunkResults: ok.map(r => ({ chunkIndex: r.chunkIndex, filesCovered: r.filesCovered, allGreen: r.allGreen, cannotTest: r.cannotTest, latentBugs: r.latentBugs, verify: r.verify })),
   flaggedChunks: flagged.length,
   cannotTestTotal: allCannotTest.length,
+  // Returned as well as written so the caller can verify the manifest write landed (and re-do it if
+  // the assemble agent skipped it) rather than trusting the prose report.
+  latentBugs: allLatentBugs,
+  latentBugsTotal: allLatentBugs.length,
   assembleReport: assembled,
 }

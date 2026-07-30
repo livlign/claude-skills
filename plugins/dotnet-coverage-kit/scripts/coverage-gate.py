@@ -40,6 +40,12 @@ except ImportError:
 # up. report.sh prints it, so a stale copy in a repo is visible without diffing.
 KIT_VERSION = "2.0.0"
 
+# The PLUGIN version these scripts ship with (KIT_VERSION above tracks the script contract; this
+# tracks the kit release, and is bumped alongside .claude-plugin/plugin.json). It exists so that any
+# run can compare itself against the manifest's `kit_version:` stamp and say "this repo has not been
+# brought up to the current kit yet" without anyone having to remember to ask. See MIGRATIONS.md.
+KIT_SEMVER = "0.13.0"
+
 # Section 7's heading text, used both to emit the heading and to build the banner's jump anchor via
 # _slug(). One constant so the link and the target cannot drift apart.
 LATENT_HEADING = "7. Latent bugs frozen by characterization (ACTION REQUIRED)"
@@ -54,6 +60,55 @@ SEV_LABEL = {
     "D": "D / Correctness / observability",
     "E": "E / Dead code or note, not a defect",
 }
+
+
+def _semver(v):
+    """('0','9','0') -> (0, 9, 0). Unparseable or empty -> None, treated as "older than anything"."""
+    parts = re.findall(r"\d+", str(v or ""))
+    if not parts:
+        return None
+    return tuple(int(p) for p in (parts + ["0", "0", "0"])[:3])
+
+
+def kit_drift(manifest):
+    """Compare the manifest's `kit_version:` stamp against the kit these scripts ship with.
+
+    Returns (stamped, state) where state is one of "current", "behind", "unstamped", "ahead".
+    Deterministic and manifest-only, so every entry point (report, backfill, redo) can ask the same
+    question cheaply and reach the same answer instead of each eyeballing it.
+    """
+    stamped = (manifest.get("kit_version") or "").strip()
+    if not stamped:
+        return stamped, "unstamped"
+    a, b = _semver(stamped), _semver(KIT_SEMVER)
+    if a == b:
+        return stamped, "current"
+    return stamped, "behind" if (a is None or a < b) else "ahead"
+
+
+def drift_note(manifest):
+    """One Markdown line for the report when a repo is not on the current kit, else None.
+
+    Deliberately a NOTE, not a red banner: pending updates are normal maintenance, not a defect, and
+    a false alarm on every run is how real banners get ignored. The point is that nobody has to know
+    to ask, so the prompt reaches the artifact people already read.
+    """
+    stamped, state = kit_drift(manifest)
+    if state == "current":
+        return None
+    if state == "unstamped":
+        return ("> ℹ️ **Kit updates may be pending.** This manifest carries no `kit_version:` stamp, "
+                "so it predates the stamp and has not been reconciled against kit %s. Run "
+                "`coverage-redo` to apply the migrations that still apply to it (it detects them; "
+                "nothing is applied silently that could move the numbers)." % KIT_SEMVER)
+    if state == "ahead":
+        return ("> ℹ️ **Stale tool copies.** The manifest is stamped kit %s but these scripts ship "
+                "with %s, so `.claude/coverage/tools/` is older than the manifest it reads. Refresh "
+                "the copies from the plugin before trusting a gate result." % (stamped, KIT_SEMVER))
+    return ("> ℹ️ **Kit updates pending.** This repo is reconciled to kit %s; the current kit is %s. "
+            "Run `coverage-redo` to review and apply what changed since (it walks MIGRATIONS.md and "
+            "detects which entries this repo still needs). The numbers below are unaffected: this "
+            "report applies nothing." % (stamped, KIT_SEMVER))
 
 
 # Directories never worth walking when locating a vendored project.
@@ -749,6 +804,10 @@ def main():
     ap.add_argument("--repo-root", default=".",
                     help="repo root used to test whether a declared vendored_paths entry exists")
     ap.add_argument("--print-kit-version", action="store_true")
+    ap.add_argument("--print-kit-drift", action="store_true",
+                    help="print `<state> <manifest kit_version> <kit semver>` (state: current|behind|"
+                         "unstamped|ahead) and exit. Manifest-only, so any entry point can check "
+                         "whether this repo is on the current kit without running coverage.")
     ap.add_argument("--summary", help="append the Markdown report to this file (e.g. $GITHUB_STEP_SUMMARY)")
     ap.add_argument("--repo-filter", help="only files whose path contains this substring")
     ap.add_argument("--needs-attention-top", type=int, default=15)
@@ -770,6 +829,11 @@ def main():
         m = yaml.safe_load(fh)
 
     # Query modes resolve from the manifest alone, before any coverage is needed.
+    if args.print_kit_drift:
+        _stamped, _state = kit_drift(m)
+        print("%s %s %s" % (_state, _stamped or "-", KIT_SEMVER))
+        sys.exit(0)
+
     if args.print_file_filter:
         print(resolve_file_filter(m, args.repo_filter, args.repo_root))
         sys.exit(0)
@@ -1069,6 +1133,13 @@ def main():
         out.append("> ⚠️ **%d test(s) FAILING in this run.** Coverage measured off a red suite is "
                    "unreliable — do NOT record or trust a baseline until the suite is green. Fix the "
                    "failures, then re-measure.\n" % tr["failed"])
+
+    # Kit-drift note. Emitted on EVERY run, so a repo left behind on an older kit says so by itself
+    # rather than waiting for someone to think of asking. Placed under the header and above the
+    # ACTION REQUIRED banner: visible, but never competing with a live-defect warning.
+    _drift = drift_note(m)
+    if _drift:
+        out.append(_drift + "\n")
 
     # ---- ACTION REQUIRED banner ----
     # The frozen-bug backlog is the first thing a reader sees, rather than being buried under seven

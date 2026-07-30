@@ -1,6 +1,6 @@
 ---
 name: generate-tests
-description: "Generate unit tests for a .NET service following the coverage-kit conventions. Use when the user asks to 'generate tests', 'backfill tests', 'characterize this service', or 'add tests for' a target after coverage-init has run. Operates in characterization mode (freeze current behavior for existing code) or spec mode (assert intended behavior for new/changed code), enforces the run-capture-fill loop, routes untestable units to the manifest cannot-test log, can fan the backfill out across a user-chosen number of parallel agents for large worklists (asking first, since more agents cost more tokens), and runs a single read-only suite critique before the baseline locks in (auditing cannot-test legitimacy, assertion/C1 depth, and systematic gaps — never the C0/C1 numbers themselves)."
+description: "Generate unit tests for a .NET service following the coverage-kit conventions. Use when the user asks to 'generate tests', 'backfill tests', 'characterize this service', or 'add tests for' a target after coverage-init has run. Operates in characterization mode (freeze current behavior for existing code) or spec mode (assert intended behavior for new/changed code), enforces the run-capture-fill loop, routes untestable units to the manifest cannot-test log, can fan the backfill out across a user-chosen number of parallel agents for large worklists (asking first, since more agents cost more tokens), and runs a single read-only suite critique before the baseline locks in (auditing cannot-test legitimacy, assertion/C1 depth, systematic gaps, and any frozen defect missing from the manifest latent_bugs backlog, never the C0/C1 numbers themselves)."
 ---
 
 # generate-tests
@@ -10,6 +10,28 @@ before generating:
 - `${CLAUDE_PLUGIN_ROOT}/rules/unit-testing.base.md`
 - `.claude/coverage/refs/unit-testing.md` (repo overlay)
 - `.claude/coverage/refs/coverage-manifest.yml` (categories, exclusions, gate)
+
+## Preflight: is this repo on the current kit?
+
+Run this before building the worklist, every time, whether or not anyone mentioned an upgrade:
+
+```
+python .claude/coverage/tools/coverage-gate.py \
+  --manifest .claude/coverage/refs/coverage-manifest.yml --print-kit-drift
+```
+
+Any state other than `current` means the repo has not been reconciled against today's rules, and a
+backfill is the worst moment to discover that: a pass run on superseded mechanics wastes every token
+it spends. Consult `${CLAUDE_PLUGIN_ROOT}/MIGRATIONS.md` ("Preflight") and split what you find:
+
+- **`auto` entries governing how THIS pass runs** (refresh the `.claude/coverage/tools/` copies, the
+  fan-out contract, frozen-bug recording): apply them now, silently, and note them in the closing
+  summary.
+- **`sign-off` entries** (anything that moves scope, the denominator, or the floor): report them in
+  one line and leave them alone. Re-scoping mid-backfill moves the worklist under your own feet.
+  `coverage-redo` is what applies them; say so and carry on with the pass as scoped today.
+
+If the state is `current`, say nothing and continue.
 
 ## Build the full worklist first — then cover ALL of it (do not stop early)
 
@@ -166,12 +188,23 @@ so present the trade-off and let them choose:
    exists to prevent (it burns the same tokens without the parallelism and drags the user through
    dozens of turns). If the workflow is genuinely unusable, say so and ask; do not silently downgrade.
 
+5. **Verify the frozen-bug write landed: the fan-out's one silent data loss.** A chunk agent works
+   in a throwaway worktree, so a suspected defect it froze exists only in its returned `latentBugs`
+   array; the assemble step is what turns those into manifest `latent_bugs:` entries. Read
+   `latentBugsTotal` off the workflow result and confirm the manifest now holds that many entries
+   (they are also returned verbatim as `latentBugs`, precisely so you can re-do the write rather
+   than trust the assemble prose). **If the counts disagree, write the missing entries yourself
+   before the promotion gate** (see "First-run triage" for the shape). An unwritten entry is not a
+   cosmetic loss: `coverage-gate.py` renders section 7 and the ACTION REQUIRED banner from the
+   manifest alone, so a green suite over live bugs reads as a correct one.
+
 The workflow reads the worklist off disk and partitions it into `concurrency` chunks (one agent
 each, in its own git worktree so parallel writes don't collide), generates + adversarially verifies
 each chunk, then a
-single assemble step applies every chunk's patch to the main tree, merges `cannot_test` discoveries
-once (no manifest write races), and confirms the full suite is green. It leaves the tree dirty:
-the promotion gate below still governs when the baseline report and commit happen.
+single assemble step applies every chunk's patch to the main tree, merges both `cannot_test` and
+`latent_bugs` discoveries once (no manifest write races), and confirms the full suite is green. It
+leaves the tree dirty: the promotion gate below still governs when the baseline report and commit
+happen.
 
 ## Measure for feedback DURING the pass (this is not the baseline)
 
@@ -299,6 +332,19 @@ applying one standard; it produces findings, it does not silently rewrite tests.
    A **target**-bucket row in Risk Hotspots is the signal. An `excl:*` hotspot is fine to leave (it
    is integration/E2E-covered, not unit) — only target-layer gaps count here. Close them before the
    baseline locks (see Output).
+
+6. **Unrecorded frozen defects (the backstop for a lost `latent_bugs:` entry).** Read the
+   assertions, not just the coverage: find every test that freezes behaviour a reviewer would call
+   wrong, and check each against manifest `latent_bugs:`. Any that is missing is a live product bug
+   the suite is now certifying as correct. The tells: a test name that states the defect
+   (`..._ThrowsRuntimeBinderException`, `..._IgnoresCurrentStudioFilter`, `..._ReturnsNull`,
+   `..._SwallowsException`), an expected value that is plainly wrong (an empty collection where the
+   scenario has matching rows, a tenant/studio filter absent from the captured query, a swallowed
+   exception, a 500-shaped path asserted as-is), or a defect described in a test comment rather than
+   in the manifest. This lens is cheap and load-bearing: a chunk agent's finding lives only in its
+   returned data, so anything the assemble step failed to write is invisible from here on. Report
+   each as a proposed `latent_bugs:` entry with its `pinned_by` test. **Recording is a manifest
+   write, never a behaviour fix**: do not change the test or the source.
 
 **Trust the C0/C1 numbers; do not second-guess them** — they are tool output; if a number looks
 wrong that is a pipeline check (file-filter, merge, instrumentation), never an LLM opinion. But
