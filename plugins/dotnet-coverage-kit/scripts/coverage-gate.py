@@ -116,6 +116,7 @@ def resolve_file_filter(m, repo_filter=None, repo_root="."):
 
     terms = [t.strip() for t in base.split(";") if t.strip()]
     have = {t.lower() for t in terms}
+    absent = []
     for path in scope.get("vendored_paths") or []:
         path = str(path).strip().strip("/\\")
         if not path:
@@ -125,9 +126,11 @@ def resolve_file_filter(m, repo_filter=None, repo_root="."):
         # for it would be dead weight that hides the day it arrives.
         found = locate_vendored_dir(repo_root, path)
         if not found:
-            print("[coverage-gate] note: scope.vendored_paths entry %r is not a directory in this "
-                  "repo, so no filefilter exclusion was emitted for it. Fine if the vendoring has "
-                  "not landed here yet; a typo otherwise." % path, file=sys.stderr)
+            # Pre-declaring a library before it is vendored here is RECOMMENDED (it closes the hole
+            # automatically on the day the migration lands), so an absent entry is the normal case,
+            # not a problem. Collect them and say it once, quietly, rather than warning per path on
+            # every run.
+            absent.append(path)
             continue
         # Use the path as FOUND, not as declared. Declaring the bare library name is the natural
         # thing to write, but the directory usually sits a level or two down (src/<name>), and a
@@ -147,6 +150,11 @@ def resolve_file_filter(m, repo_filter=None, repo_root="."):
             if term.lower() not in have:
                 terms.append(term)
                 have.add(term.lower())
+    if absent:
+        print("[coverage-gate] note: %d declared vendored path(s) not present here, so no "
+              "filefilter term was emitted for them (expected if the vendoring has not landed "
+              "yet; check for a typo if one should be here): %s"
+              % (len(absent), ", ".join(absent)), file=sys.stderr)
     return ";".join(terms)
 
 
