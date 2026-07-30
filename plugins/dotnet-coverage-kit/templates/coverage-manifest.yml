@@ -41,14 +41,32 @@ scope:
   # Empty means "derive +*<repo-filter>*" from the argument passed to report.sh.
   file_filter: ""
 
-  # First-party shared libraries COPIED INTO this repo as directories (not NuGet, not a sibling
-  # checkout beside the repo). These need explicit exclusion and are the easiest thing here to
-  # miss, because a vendored directory lives UNDER the repo root, so its paths contain the repo's
-  # own name and the `+*<repo>*` include swallows them. Left unexcluded they enter the denominator
-  # and the reported figure collapses with no code change behind it.
-  # An entry becomes an exclusion only when the directory actually exists, so it is safe to declare
-  # one ahead of a migration that has not reached this repo yet.
-  vendored_paths: []   # e.g. ["sharedlib", "base-infra-kafka"]
+  # VENDORED REFERENCE PROJECTS: first-party libraries COPIED INTO this repo as directories, rather
+  # than consumed as a package or checked out as a sibling beside the repo. Declare each one here.
+  #
+  # This is the single declaration for them. It drives BOTH things that have to happen, so they
+  # cannot drift apart:
+  #
+  #   1. MEASUREMENT  the path is excluded from the ReportGenerator filefilter, so its lines never
+  #                   enter the denominator.
+  #   2. TEST SCOPE   the path becomes an `exclusions` entry (category non-product), so the sweep
+  #                   does not classify it, the backfill never opens a worklist item for it, and no
+  #                   test is ever written against another repo's source.
+  #
+  # Getting only (1) is the trap, because the reported percentage comes out right and the mistake
+  # looks fixed. The sweep reads the FILESYSTEM, not the coverage XML: one real case enumerated
+  # 1,749 foreign files and would have generated tests for a library owned by another team. You do
+  # not need to add a matching `exclusions` entry by hand; a duplicate is harmless if you do.
+  #
+  # Easy to miss, because a vendored directory lives UNDER the repo root, so its paths contain the
+  # repo's own name and the `+*<repo>*` include swallows every file.
+  #
+  # An entry only takes effect when the directory actually exists, so declaring one ahead of a
+  # migration that has not reached this repo yet is safe and is the recommended way to pre-empt it.
+  #
+  # Rule of thumb: if another repo owns the code and runs its own tests over it, it belongs here,
+  # however it arrived. A vendoring migration does not transfer test ownership.
+  vendored_paths: []   # e.g. ["sharedlib", "base-infra-kafka", "shared-asset-lib"]
 
 gate:
   # Set to `target` so changed lines enter at the goal on every PR (per-PR enforcement of target).

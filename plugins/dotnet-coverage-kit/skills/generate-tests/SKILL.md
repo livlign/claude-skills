@@ -136,6 +136,11 @@ so present the trade-off and let them choose:
    invoke the workflow with the manifest **path, not the list itself**. Get the call exactly right
    (each rule below is a real field failure this kit has hit, where ZERO agents ran and the launch
    still looked like success):
+   - **No item may live under a `scope.vendored_paths` directory.** Those are copies of other repos'
+     sources, owned and tested there. A worklist item inside one is a scoping bug upstream in the
+     sweep, not work to do: drop it, and say so, rather than writing a test for another team's
+     library against a copy the next vendoring sync overwrites. Filter the worklist against
+     `scope.vendored_paths` before writing it, and if anything was dropped, report the count.
    - **Write the file FIRST and confirm it is non-empty** (`test -s coverage/backfill/worklist.json`).
      The workflow's Plan agent reads this file off disk; if it is missing or empty the run bails with
      `empty-worklist` and spawns nothing.

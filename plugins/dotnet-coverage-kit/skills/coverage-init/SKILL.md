@@ -58,6 +58,35 @@ State the branch and commit you initialized against in the step 11 report, so th
    small files get misclassified too, and fanning the sweep out removes the cost reason that
    ever justified skipping.
 
+   **First, drop every VENDORED REFERENCE PROJECT from the enumeration.** A first-party library
+   that was COPIED INTO this repo as a directory (rather than consumed as a package or checked out
+   as a sibling) is owned and tested by the repo it came from. It is not this repo's code, is not a
+   test target here, and must never reach a classification agent. Identify these in step 2, list
+   each one in manifest `scope.vendored_paths`, and enumerate only what is left.
+
+   Signals that a directory is a vendored reference project, not this repo's own source:
+   - it carries its own `.sln`, its own README, or its own CI config
+   - its `csproj` assembly names follow another repo's naming, not this one's
+   - relative `ProjectReference` paths climb out of a project and land inside it
+   - its history arrived as a bulk import (an org moving shared libraries from sibling checkouts
+     into each consumer repo is the usual cause)
+
+   Getting this wrong is expensive and it does NOT announce itself. `scope.vendored_paths` also
+   feeds the ReportGenerator filefilter, so a repo can look correctly scoped (the reported
+   percentage is right, the foreign lines are out of the denominator) while the sweep still walks
+   the FILESYSTEM and classifies every one of those files. One real case enumerated 1,749 foreign
+   files. Left unnoticed, the backfill then writes tests for another team's library, in this repo,
+   against a copy that the next vendoring sync overwrites.
+
+   Because `coverage-gate.py` generates a `non-product` exclusion from each `scope.vendored_paths`
+   entry, declaring it once is enough: measurement scope and test scope cannot then disagree. Do
+   not hand-write a parallel `exclusions` entry (harmless, but it is now redundant).
+
+   The rule of thumb: **if another repo owns the code and runs its own tests over it, it is out of
+   scope here, however it arrived.** A vendoring migration moves files; it does not transfer test
+   ownership. This applies equally to shared base libraries, shared infrastructure/messaging
+   libraries, and any other cross-repo reference project the build pulls in.
+
    Every file is classified by an **objective signal in the source**, cited at `file:line`
    (each rule is a concrete condition — the spec a future static-analysis helper would
    automate):

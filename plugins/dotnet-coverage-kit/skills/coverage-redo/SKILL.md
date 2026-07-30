@@ -101,6 +101,15 @@ with a clean working tree. Additionally:
      `..._ThrowsRuntimeBinderException` or `..._IgnoresCurrentStudioFilter`, or an assertion whose
      expected value is plainly wrong) and give each a `latent_bugs:` entry with its `pinned_by` test.
      This is what stops a green suite from being read as a correct one.
+   - **Check for newly VENDORED reference projects.** An org moving shared libraries out of sibling
+     checkouts and into each consumer repo is a common change between an onboarding and a redo, and
+     it is invisible to a manifest written before the move: the directory is new, it sits under the
+     repo root, and the `+*<repo>*` include swallows it. Look for directories that are copies of
+     another repo (own `.sln`, own README, assembly names following another repo's convention) and
+     list each in `scope.vendored_paths`. Then confirm the sweep did not classify anything inside
+     them, and DELETE any target, carve-out, or `cannot_test` entry that points into one, since a
+     prior run may have generated tests for foreign code. Those deletions are the one case where
+     removing an existing test is correct, so call them out explicitly in the step-9 report.
    - **Preserve:** an exclusion the sweep still agrees with, a still-valid carve-out, the
      `baseline`, and the `gate` block are carried over unchanged.
    - **Gray zone:** a genuine disagreement (vendored-vs-product, a host blanket that may hide a

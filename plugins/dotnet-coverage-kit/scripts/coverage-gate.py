@@ -56,6 +56,41 @@ SEV_LABEL = {
 }
 
 
+# Directories never worth walking when locating a vendored project.
+_SKIP_DIRS = {".git", ".vs", ".idea", "node_modules", "bin", "obj", "packages", "coverage",
+              "TestResults", ".claude"}
+
+
+def locate_vendored_dir(repo_root, declared, max_depth=4):
+    """Repo-relative path of a declared vendored directory, or None.
+
+    Accepts the bare library name ("sharedlib") as well as a full relative path
+    ("src/sharedlib"), because the bare name is what people naturally write while the directory
+    usually sits a level or two down. Returns the path as found, with forward slashes, so callers
+    build filter terms that match the real paths rather than the declaration.
+    """
+    declared = declared.replace("\\", "/").strip("/")
+    if not declared:
+        return None
+    direct = os.path.join(repo_root, declared)
+    if os.path.isdir(direct):
+        return declared
+
+    # Shallow breadth-first walk: a vendored library is a top-level-ish directory, never buried deep.
+    for root, dirs, _files in os.walk(repo_root):
+        rel = os.path.relpath(root, repo_root).replace("\\", "/")
+        depth = 0 if rel == "." else rel.count("/") + 1
+        if depth >= max_depth:
+            dirs[:] = []
+            continue
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for d in dirs:
+            cand = ("%s/%s" % ("" if rel == "." else rel, d)).lstrip("/")
+            if cand == declared or cand.endswith("/" + declared) or d == declared:
+                return cand
+    return None
+
+
 def resolve_file_filter(m, repo_filter=None, repo_root="."):
     """The ReportGenerator -filefilters expression for this repo.
 
@@ -88,13 +123,69 @@ def resolve_file_filter(m, repo_filter=None, repo_root="."):
         # Only exclude what is actually present: a declared-but-absent path means
         # the vendoring has not reached this repo yet, and a standing exclusion
         # for it would be dead weight that hides the day it arrives.
-        if not os.path.isdir(os.path.join(repo_root, path)):
+        found = locate_vendored_dir(repo_root, path)
+        if not found:
+            print("[coverage-gate] note: scope.vendored_paths entry %r is not a directory in this "
+                  "repo, so no filefilter exclusion was emitted for it. Fine if the vendoring has "
+                  "not landed here yet; a typo otherwise." % path, file=sys.stderr)
             continue
-        term = "-*%s*" % path
-        if term.lower() not in have:
-            terms.append(term)
-            have.add(term.lower())
+        # Use the path as FOUND, not as declared. Declaring the bare library name is the natural
+        # thing to write, but the directory usually sits a level or two down (src/<name>), and a
+        # `-*<name>*` term built from the bare name would not match the real paths.
+        path = found
+        # A multi-segment path needs BOTH separator spellings. ReportGenerator matches these globs
+        # against the raw paths in the coverage data, which are backslashed on Windows and
+        # forward-slashed on Linux, and a glob cannot express "either separator". Emitting one
+        # spelling silently no-ops on the other platform: the filter looks correct, and the foreign
+        # files land in the denominator anyway. Single-segment paths have no separator to disagree
+        # about, so they stay one term.
+        spellings = [path]
+        if "/" in path or "\\" in path:
+            spellings = [path.replace("\\", "/"), path.replace("/", "\\")]
+        for spelling in spellings:
+            term = "-*%s*" % spelling
+            if term.lower() not in have:
+                terms.append(term)
+                have.add(term.lower())
     return ";".join(terms)
+
+
+def vendored_exclusions(m):
+    """Synthetic `exclusions` entries for every declared scope.vendored_paths directory.
+
+    A vendored reference project (a first-party library COPIED INTO this repo rather than consumed
+    as a package or a sibling checkout) has to leave scope in TWO independent places, and declaring
+    it once must cover both or they drift:
+
+      1. MEASUREMENT: out of the ReportGenerator filefilter, so its lines never reach the
+         denominator. Handled by resolve_file_filter().
+      2. CLASSIFICATION: out of `exclusions`, so the sweep does not enumerate it, the backfill
+         never opens a worklist item for it, and no test is written against another repo's source.
+
+    Effect 1 alone looks sufficient because the reported percentage comes out right, but the sweep
+    reads the FILESYSTEM, not the coverage XML. One real case enumerated 1,749 foreign files and
+    would have generated tests for a shared library owned by a different team.
+
+    Generated rather than required-in-`exclusions` so `vendored_paths` stays the single declaration.
+    A hand-written exclusion for the same path is harmless: both match, first one wins.
+    """
+    out = []
+    for path in ((m.get("scope") or {}).get("vendored_paths") or []):
+        path = str(path).strip().strip("/\\")
+        if not path:
+            continue
+        out.append({
+            "pattern": "**/%s/**" % path,
+            "category": "non-product",
+            "reason": (
+                "Vendored reference project: a copy of another repo's sources living inside this "
+                "repo. Owned and tested by that repo, so it is neither measured nor a test target "
+                "here. Declared once in scope.vendored_paths, which drives both the filefilter and "
+                "this exclusion."
+            ),
+            "_generated_from": "scope.vendored_paths",
+        })
+    return out
 
 
 def _localname(tag):
@@ -678,7 +769,7 @@ def main():
     if not args.cobertura:
         ap.error("--cobertura is required unless --print-file-filter is given")
 
-    exclusions = m.get("exclusions") or []
+    exclusions = (m.get("exclusions") or []) + vendored_exclusions(m)
     category_map = m.get("category_map") or {}
     gate = m.get("gate") or {}
     baseline = (m.get("baseline") or {}).get("recorded_overall") or {}
@@ -921,7 +1012,11 @@ def main():
                                   % ("(allowed) ✅" if args.allow_scope_change else "— needs reviewer sign-off ❌"))
                 for l in lowered:
                     gate_lines.append("  - %s" % l)
-            grew_excl = len(exclusions) - len(bm.get("exclusions") or [])
+            # Compare like with like: `exclusions` here carries the synthetic vendored entries, so
+            # the base side must be expanded the same way. Otherwise every PR reports
+            # "exclusions grew by <number of vendored paths>" and demands the sign-off label for a
+            # change nobody made.
+            grew_excl = len(exclusions) - len((bm.get("exclusions") or []) + vendored_exclusions(bm))
             grew_ct = len(cannot_test) - len(bm.get("cannot_test") or [])
             new_excluded = []
             for gp in added_files(args.base):
