@@ -414,6 +414,23 @@ State the branch and commit you initialized against in the step 11 report, so th
    Never modify or delete any other workflow file. Record which path you took (created /
    skipped-because-exists / proposed-merge) in the step 11 report.
 
+   **Fill `scope.file_filter` in the manifest, and never repeat it in the workflow.** The workflow
+   template resolves it with `coverage-gate.py --print-file-filter`, so the manifest is the one
+   definition CI and local `report.sh` runs share. A filter written in both places drifts, and the
+   failure is silent: the local number quietly measures files CI excludes.
+
+   **Scope out shared code that is COPIED INTO the repo, via `scope.vendored_paths`.** Distinct
+   from the sibling-checkout case above, and much easier to miss. A sibling repo checked out
+   *beside* this one has a path that does not contain this repo's name, so `+*<repo>*` excludes it
+   for free. A shared library copied *into* the repo as a directory sits UNDER the repo root, so
+   its paths contain the repo's name and the include swallows every file. Detect it in step 2: a
+   top-level directory holding `.csproj` files that are a copy of another repo's sources rather
+   than this repo's own. List each one in `scope.vendored_paths`; entries only become exclusions
+   when the directory is actually present, so declaring one ahead of an in-flight migration is
+   safe. Left undeclared, a real case pulled 2447 foreign files into the denominator and moved the
+   reported figure from 83.9% to 33.3% with no code change behind it, which reads as a coverage
+   collapse rather than a scoping mistake.
+
    **Tell the user the gate is only advisory until they make it binding** (you cannot do this
    for them — it is a GitHub setting): in branch protection for the production branch, require
    the Coverage status check to pass before merging, and treat the baseline floor in the

@@ -20,7 +20,7 @@
       "name": "dotnet-coverage-kit",
       "source": "./plugins/dotnet-coverage-kit",
       "description": "Characterization-test backfill and spec-test enforcement for .NET services. Deterministic C0/C1 coverage via dotnet-coverage, with per-method classification and a checked-in manifest explaining every inclusion, exclusion, and cannot-test entry.",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "keywords": ["dotnet", "testing", "coverage", "characterization", "xunit"]
     }
   ]

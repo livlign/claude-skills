@@ -25,6 +25,30 @@ baseline:
   recorded_overall:    # filled by coverage-report at baseline; becomes the ratchet floor
     c0: null           # record a few points BELOW `target` (headroom), not at it
     c1: null
+  # In-scope (Adjusted) line total when the floor above was recorded. Stamped alongside it and used
+  # only as a sanity check: if in-scope size later moves more than ~1.5x either way, the gate says
+  # "check your filefilter" rather than letting a scope change masquerade as a coverage regression.
+  # Leave null to skip the check.
+  scope_lines: null
+
+# WHICH FILES are measured at all, before any include/exclude classification. This is the
+# ReportGenerator -filefilters expression, and it lives here so that a local report.sh run and the
+# CI workflow read ONE definition. Holding it in two places (a CI yml, plus whatever someone types
+# locally) is exactly how a repo ends up with exclusions in CI that local runs silently lack.
+scope:
+  # Include this repo's own sources; exclude code from other repos the build pulls in.
+  #   e.g. "+*myrepo*;-*sharedlib*;-*otherrepo*"
+  # Empty means "derive +*<repo-filter>*" from the argument passed to report.sh.
+  file_filter: ""
+
+  # First-party shared libraries COPIED INTO this repo as directories (not NuGet, not a sibling
+  # checkout beside the repo). These need explicit exclusion and are the easiest thing here to
+  # miss, because a vendored directory lives UNDER the repo root, so its paths contain the repo's
+  # own name and the `+*<repo>*` include swallows them. Left unexcluded they enter the denominator
+  # and the reported figure collapses with no code change behind it.
+  # An entry becomes an exclusion only when the directory actually exists, so it is safe to declare
+  # one ahead of a migration that has not reached this repo yet.
+  vendored_paths: []   # e.g. ["sharedlib", "base-infra-kafka"]
 
 gate:
   # Set to `target` so changed lines enter at the goal on every PR (per-PR enforcement of target).
@@ -92,6 +116,37 @@ cannot_test:
     reason: ""        # e.g. "Reads DateTime.UtcNow directly; no clock seam, source frozen at baseline"
     mitigation: ""    # REQUIRED — the source change that unlocks it, e.g. "Inject IClock and read _clock.UtcNow",
                       # or "none — genuinely nondeterministic external boundary" when nothing would
+
+# Product bugs a characterization backfill FROZE instead of fixing. Rendered as a red
+# "7. Latent bugs frozen by characterization (ACTION REQUIRED)" section plus a banner at the very top
+# of REPORT.md / REPORT.html, so the backlog sits in the artifact people actually read.
+#
+# Why this exists: characterization mode pins what the code does TODAY, wrong behaviour included, so
+# some tests assert a bug on purpose. Left unrecorded, "all green" reads as "the code is correct"
+# when it only means "behaviour has not drifted".
+#
+# This is a DEFECT BACKLOG, not a coverage exemption. It does not affect scope, the Adjusted number,
+# the ratchet, or the diff gate. Untestable *code* still goes to `cannot_test` above.
+#
+# RULES
+#   - Fixing a bug means updating or deleting its characterization test IN THE SAME CHANGE. A correct
+#     fix turns the suite red until you do, because the old test asserts the old wrong behaviour.
+#   - Remove the entry once fixed. This list is the source of truth.
+#   - Do NOT append findings to CANNOT-TEST.md: that file is regenerated from this manifest on every
+#     report.sh run, so an append is silently lost.
+#
+# Severity drives ordering and the A/B/C "needs resolving" count in the banner:
+#   A: security / cross-tenant (data visible or mutable across a tenant boundary)
+#   B: data loss or corruption
+#   C: unhandled exception surfacing as a 500
+#   D: correctness / observability
+#   E: dead code or a note, not a defect
+latent_bugs: []
+  # - severity: A
+  #   target: "OrderRepository.DeleteAsync"     # class.method the defect lives in
+  #   file: "src/Data/OrderRepository.cs:214"   # optional; path or path:line
+  #   summary: "Ignores the current-tenant filter, so a caller can delete another tenant's rows."
+  #   pinned_by: "DeleteAsync_DeletesAcrossTenants_IgnoresTenantFilter"   # test that freezes it
 
 # Canonical categories — use these exact spellings (hyphens, lower-case). The report groups by
 # category, so drift like `framework_mismatch` vs `framework-incompatible` splits one real concept

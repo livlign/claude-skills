@@ -15,7 +15,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REFS="$HERE/../refs"
 REPORTS="$HERE/../reports"
 SOLUTION="${1:-}"
-REPO_FILTER="${2:-${FILEFILTER:-}}"
+# Two DIFFERENT filters, kept separate on purpose:
+#   REPO_FILTER  bare substring (e.g. "myrepo")        -> coverage-gate.py --repo-filter
+#   FILE_FILTER  full ReportGenerator expression       -> run-coverage.sh -filefilters
+# These used to be one variable, so a full expression was impossible locally: it got wrapped into
+# "+*+*a*;-*b**" for ReportGenerator and handed to the gate where a bare substring was expected.
+# The upshot was that exclusions only ever existed in CI, and a local run silently measured code
+# the CI run excluded.
+REPO_FILTER="${2:-}"
 OUTPUT_DIR="coverage"            # throwaway collection + drill-down, at the repo root (gitignored)
 MANIFEST="$REFS/coverage-manifest.yml"
 # Each run's report is preserved in a dated subfolder (reports/YYYY-MM-DD/), not overwritten, so
@@ -26,11 +33,22 @@ REPORT_DIR="$REPORTS/$REPORT_DATE"
 mkdir -p "$REPORT_DIR"
 REPORT="$REPORT_DIR/REPORT.md"
 
-# 1. Collect (auto-detects the .sln if not passed). REPO_FILTER is a plain substring (e.g. the
-# repo name); ReportGenerator needs a +glob, the gate needs the bare substring — derive both here.
-"$HERE/run-coverage.sh" "$SOLUTION" "$OUTPUT_DIR" "$REFS/coverage.runsettings" "${REPO_FILTER:++*$REPO_FILTER*}"
+# 1. Resolve the ReportGenerator filefilter from the manifest (scope.file_filter plus an exclusion
+# for any declared scope.vendored_paths that is actually present). The manifest is the single source
+# of truth so this run and CI cannot disagree; FILEFILTER in the environment still wins for one-offs.
+if [[ -n "${FILEFILTER:-}" ]]; then
+  FILE_FILTER="$FILEFILTER"
+else
+  FILE_FILTER="$(python "$HERE/coverage-gate.py" --manifest "$MANIFEST" --print-file-filter \
+    --repo-root . ${REPO_FILTER:+--repo-filter "$REPO_FILTER"})"
+fi
+echo "KIT_VERSION=$(python "$HERE/coverage-gate.py" --manifest "$MANIFEST" --print-kit-version)"
+echo "FILE_FILTER=$FILE_FILTER"
 
-# 2. Join + gate + format. Tee the Markdown to the committed reports dir; emit HTML beside it.
+# 2. Collect (auto-detects the .sln if not passed).
+"$HERE/run-coverage.sh" "$SOLUTION" "$OUTPUT_DIR" "$REFS/coverage.runsettings" "$FILE_FILTER"
+
+# 3. Join + gate + format. Tee the Markdown to the committed reports dir; emit HTML beside it.
 # Set BASE=<ref> (e.g. BASE=origin/master) to preview the PR gate locally — adds diff-coverage
 # and the scope-change guard. Without it this is a plain local report (ratchet only).
 set +e

@@ -83,6 +83,13 @@ every file is tested or skipped.
   The full per-file drill-down stays in the HTML report, so the summary isn't a wall of text.
 - **Why:** the numbers always come from the tools, never from guessing; nothing is hidden — and
   the same report runs locally and in CI, so what you see is what the PR sees.
+- **Bugs the backfill found but did not fix:** when a safety net is added to existing code, the
+  tests lock in *what the code does today*, including anything that looks wrong. So a fully green
+  suite means "nothing has changed", not "everything is correct". Any suspected bug found along the
+  way is recorded in the manifest and shown in **red at the top of the report**, counted by
+  severity, with a link to the full list. That way a real defect cannot hide behind a green tick.
+  Fixing one means updating its test in the same change, because the old test asserts the old,
+  wrong behaviour.
 
 **Check coverage** — keep coverage from slipping
 - **How:** while a developer writes or edits code, they run `coverage-report` on their own

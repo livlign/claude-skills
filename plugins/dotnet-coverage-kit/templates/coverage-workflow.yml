@@ -20,8 +20,10 @@ on:
   pull_request:
     branches: [master]   # only PRs whose target (base) branch is master
     # 'labeled' is included so that applying the scope-change sign-off label (coverage-scope-change)
-    # re-runs the gate automatically, with no manual re-run. The other three are the normal triggers.
-    types: [opened, synchronize, reopened, labeled]
+    # re-runs the gate automatically, with no manual re-run. 'unlabeled' is the other half: REMOVING
+    # the label must re-assert the guard, or a revoked sign-off leaves a stale green check behind.
+    # The other three are the normal triggers.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # id-token:write is required for the AWS OIDC step below (mint a short-lived token for CodeArtifact);
 # contents:read is for actions/checkout. Safe to keep even if you delete the CodeArtifact block.
@@ -45,7 +47,30 @@ jobs:
 
       # --- PRIVATE sibling repos (DELETE this whole block if there are no cross-repo references, or
       # the siblings are public). A private sibling CANNOT be cloned by an unauthenticated checkout.
-      # Authenticate with a GitHub App token (preferred: short-lived, scoped) OR a PAT secret. ---
+      # Authenticate with a GitHub App token (preferred: short-lived, scoped) OR a PAT secret.
+      #
+      # BEFORE ENABLING THIS, PROVE THE REFERENCES ACTUALLY LEAVE THE REPO. A deep relative path is
+      # NOT evidence: `..\..\..\..\..\sharedlib\X.csproj` from a deeply nested csproj can climb five
+      # levels and land back INSIDE this repo, when sharedlib is vendored here rather than a sibling.
+      # Scaffolding a checkout for that case fails the whole job with
+      # "repository '<ORG>/<sharedlib>' not found" and the fix is to DELETE the step, not to add a
+      # token. Resolve the paths instead of eyeballing them:
+      #
+      #   python - <<'EOF'
+      #   import os, re, glob
+      #   inside = escaping = 0
+      #   for p in glob.glob('**/*.csproj', recursive=True):
+      #       txt = open(p, encoding='utf-8-sig', errors='ignore').read()
+      #       for ref in re.findall(r'ProjectReference Include="([^"]+)"', txt):
+      #           t = os.path.normpath(os.path.join(os.path.dirname(p), ref.replace('\\', '/')))
+      #           if t.startswith('..'): escaping += 1; print('ESCAPES:', p, '->', t)
+      #           else: inside += 1
+      #   print('inside=%d escaping=%d' % (inside, escaping))
+      #   EOF
+      #
+      # escaping == 0 means every reference resolves in-repo: delete this block. A vendored copy still
+      # needs `scope.vendored_paths` in the manifest so it stays out of the DENOMINATOR, which is a
+      # separate concern from checkout. ---
       # - name: Create GitHub App token (for private sibling checkout)
       #   id: app-token
       #   uses: actions/create-github-app-token@v1
@@ -93,12 +118,23 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --no-tags --depth=0 origin "$BASE_REF:refs/remotes/origin/$BASE_REF" || git fetch origin "$BASE_REF"
 
+      # Resolve the file filter from the manifest rather than repeating it here. This is the whole
+      # point of manifest `scope.file_filter`: CI and a local report.sh run must scope to the same
+      # files, and a filter typed in two places drifts. It also picks up exclusions for any
+      # `scope.vendored_paths` present in the checkout.
+      - name: Resolve coverage file filter
+        id: filter
+        run: |
+          echo "value=$(python .claude/coverage/tools/coverage-gate.py \
+            --manifest .claude/coverage/refs/coverage-manifest.yml \
+            --print-file-filter --repo-root . --repo-filter '<repo-path-substring>')" >> "$GITHUB_OUTPUT"
+
       # Collects coverage per test project and writes coverage/html/Cobertura.xml (repo-scoped via
       # the file filter). Scripts live under .claude/coverage/tools/, config under refs/.
       # run-coverage.sh hard-fails if a discovered test project is missing from the solution or emits
       # no results, so a silent undercount cannot slip through.
       - name: Coverage
-        run: ./.claude/coverage/tools/run-coverage.sh <solution.sln> ./coverage .claude/coverage/refs/coverage.runsettings "+*<repo-path-substring>*"
+        run: ./.claude/coverage/tools/run-coverage.sh <solution.sln> ./coverage .claude/coverage/refs/coverage.runsettings "${{ steps.filter.outputs.value }}"
 
       # Full gate: ratchet + diff coverage on changed lines + scope-change guard. Publishes the
       # report to the PR summary and FAILS the job on any gate breach.

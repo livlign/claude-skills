@@ -369,15 +369,43 @@ seam) — do not skip and do not widen the test project's references.
 A characterization test is green by construction once run-capture-fill completes, because
 the assertion holds the actual output. The only judgment calls are the units where the
 captured output looks like a latent bug. Freeze them anyway (assert the actual value) and
-record them as observations for the report — frozen, not endorsed. Do not change behavior.
+**record each one as a `latent_bugs:` entry in the manifest**: frozen, not endorsed. Do not
+change behavior.
+
+Record it in the MANIFEST, not in prose. `coverage-gate.py` renders `latent_bugs:` as a red
+"7. Latent bugs frozen by characterization (ACTION REQUIRED)" section plus a banner at the top of
+every report, so the backlog reaches the artifact people actually read and survives regeneration.
+A note written into the report body instead is lost the next time `report.sh` runs.
+
+One entry per suspected defect:
+
+```yaml
+latent_bugs:
+  - severity: A            # A security/cross-tenant · B data loss · C unhandled 500
+                           # D correctness/observability · E dead code or note, not a defect
+    target: "OrderRepository.DeleteAsync"
+    file: "src/Data/OrderRepository.cs:214"   # optional
+    summary: "Ignores the current-tenant filter, so a caller can delete another tenant's rows."
+    pinned_by: "DeleteAsync_DeletesAcrossTenants_IgnoresTenantFilter"
+```
+
+`pinned_by` is the test that freezes the behaviour, and it is what makes the entry actionable: a
+correct fix turns that test red, so whoever fixes the bug knows exactly which assertion to update
+in the same change.
+
+**`latent_bugs` is a defect backlog, not a coverage exemption.** It does not affect scope, the
+Adjusted number, the ratchet, or the diff gate. Untestable *code* still goes to `cannot_test`.
+Do NOT append findings to `CANNOT-TEST.md`: that file is regenerated from the manifest on every
+`report.sh` run, so an append is silently lost.
 
 ## Output of a generation pass
 
 - New/updated test files mirroring source structure, named `Method_Scenario_Expected`.
 - Any newly discovered untestable targets appended to the manifest `cannot_test` list, each
   scoped to a method and carrying `{ category, lines, reason, mitigation }`.
-- A short list of suspected-latent-bug observations (target + what looked wrong), for the
-  report's observations section. Do not fix them.
+- A `latent_bugs:` entry in the manifest for every suspected defect frozen by a test, each
+  carrying `{ severity, target, file?, summary, pinned_by }`. Do not fix them; the red
+  section 7 of the report is what surfaces them.
 - The updated worklist checklist: N of M items done, what remains (and which phase, if phased) —
   the testable set at 100% branch coverage, with the residual `cannot_test` list and its
   mitigation plan called out explicitly (this is the exit-gate evidence).

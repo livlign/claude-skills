@@ -84,6 +84,23 @@ with a clean working tree. Additionally:
      given the default (C0 95% / C1 85% on the Adjusted slice) so the report reads against the goal;
      the existing `gate` and `baseline` are preserved (raising the diff gate to the target is a
      reviewed change, not automatic).
+   - **Add the `scope` block if the manifest has none** (every manifest written before it existed).
+     Set `scope.file_filter` to the expression the repo's CI workflow currently passes to
+     `run-coverage.sh`, verbatim, including its exclusions. Reading it out of CI is the point: for
+     older repos the exclusions live *only* there, so local runs have been measuring a different
+     file set than CI all along, and copying it in is what ends that split. Then check the repo for
+     shared libraries copied in as directories and list them in `scope.vendored_paths`.
+   - **Stamp `baseline.scope_lines`** from the "Total lines (Adjusted)" denominator of the report
+     produced in step 7, so the gate can tell a scoping mistake from a regression. Do this even
+     when preserving an existing floor: the floor and the scope size it was measured against belong
+     together, and a floor without one is why an inflated denominator reads as lost coverage.
+   - **Migrate frozen bugs into `latent_bugs:`.** A manifest written before that block existed
+     recorded suspected defects, if at all, as prose in an old report's Observations section or
+     appended to `CANNOT-TEST.md`. Both are lost on the next `report.sh` run, so treat any you find
+     as unrecorded. Sweep the existing test suite for tests that assert a bug on purpose (names like
+     `..._ThrowsRuntimeBinderException` or `..._IgnoresCurrentStudioFilter`, or an assertion whose
+     expected value is plainly wrong) and give each a `latent_bugs:` entry with its `pinned_by` test.
+     This is what stops a green suite from being read as a correct one.
    - **Preserve:** an exclusion the sweep still agrees with, a still-valid carve-out, the
      `baseline`, and the `gate` block are carried over unchanged.
    - **Gray zone:** a genuine disagreement (vendored-vs-product, a host blanket that may hide a

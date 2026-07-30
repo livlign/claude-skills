@@ -36,6 +36,67 @@ except ImportError:
     sys.exit(2)
 
 
+# Bumped whenever the installed tools/ scripts change in a way a repo should pick
+# up. report.sh prints it, so a stale copy in a repo is visible without diffing.
+KIT_VERSION = "2.0.0"
+
+# Section 7's heading text, used both to emit the heading and to build the banner's jump anchor via
+# _slug(). One constant so the link and the target cannot drift apart.
+LATENT_HEADING = "7. Latent bugs frozen by characterization (ACTION REQUIRED)"
+
+# Severity scale for manifest `latent_bugs:`. A/B/C are the "needs resolving" band counted in the
+# banner; D/E are recorded but not escalated.
+SEV_ORDER = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
+SEV_LABEL = {
+    "A": "A / Security / cross-tenant",
+    "B": "B / Data loss or corruption",
+    "C": "C / Unhandled exception surfacing as a 500",
+    "D": "D / Correctness / observability",
+    "E": "E / Dead code or note, not a defect",
+}
+
+
+def resolve_file_filter(m, repo_filter=None, repo_root="."):
+    """The ReportGenerator -filefilters expression for this repo.
+
+    Single source of truth, read from the manifest, so a local run and CI cannot
+    drift apart. Resolution order:
+
+      1. manifest scope.file_filter, when set
+      2. otherwise derive "+*<repo_filter>*" from the bare substring
+
+    Then every declared scope.vendored_paths entry that actually exists as a
+    directory in the repo gets a "-*<path>*" exclusion appended if missing.
+
+    That last step is the load-bearing one. A first-party shared library copied
+    INTO the repo sits under the repo root, so its paths contain the repo's own
+    name and are swallowed by the "+*<repo>*" include. Left unexcluded it lands
+    in the denominator: one real case pulled in 2447 foreign files and moved the
+    reported figure from 83.9% to 33.3% with no code change behind it.
+    """
+    scope = m.get("scope") or {}
+    base = (scope.get("file_filter") or "").strip()
+    if not base and repo_filter:
+        base = "+*%s*" % repo_filter
+
+    terms = [t.strip() for t in base.split(";") if t.strip()]
+    have = {t.lower() for t in terms}
+    for path in scope.get("vendored_paths") or []:
+        path = str(path).strip().strip("/\\")
+        if not path:
+            continue
+        # Only exclude what is actually present: a declared-but-absent path means
+        # the vendoring has not reached this repo yet, and a standing exclusion
+        # for it would be dead weight that hides the day it arrives.
+        if not os.path.isdir(os.path.join(repo_root, path)):
+            continue
+        term = "-*%s*" % path
+        if term.lower() not in have:
+            terms.append(term)
+            have.add(term.lower())
+    return ";".join(terms)
+
+
 def _localname(tag):
     return tag.rsplit("}", 1)[-1]
 
@@ -124,12 +185,22 @@ def pct(cov, tot):
     return (100.0 * cov / tot) if tot else 0.0
 
 
+def _slug(text):
+    """GitHub-style heading anchor, so an in-report [jump](#...) link resolves in the HTML."""
+    s = re.sub(r"`|\*\*", "", text).strip().lower()
+    s = re.sub(r"[^a-z0-9 \-]", "", s)
+    return re.sub(r"\s+", "-", s).strip("-")
+
+
 def _inline(s):
-    """Inline markdown -> HTML on already-escaped text. Handles `code` and **bold** only;
+    """Inline markdown -> HTML on already-escaped text. Handles `code`, **bold** and [text](href);
     underscores are left alone so identifiers like cannot_test are not mangled."""
     s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
     s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
-    return s
+    # links last, so a [text](#anchor) in the action-required banner becomes clickable
+    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r"<a href='\2'>\1</a>", s)
+    # a table cell escaped its pipes for markdown; unescape for display
+    return s.replace("\\|", "|")
 
 
 def _esc(s):
@@ -144,36 +215,85 @@ def md_to_html(md):
         ln = lines[i]
         if ln.startswith("|") and i + 1 < len(lines) and is_sep.match(lines[i + 1]):
             def cells(row):
-                return [c.strip() for c in row.strip().strip("|").split("|")]
+                # Split on UNESCAPED pipes only. Cell text may legitimately contain a pipe (C# such
+                # as `a || b`), escaped as \| by the emitter; a naive split("|") would break the row
+                # into extra columns and shear the table. _inline() unescapes for display.
+                return [c.strip() for c in re.split(r"(?<!\\)\|", row.strip().strip("|"))]
             head = cells(ln); i += 2
-            body.append("<table><thead><tr>" + "".join("<th>%s</th>" % _inline(_esc(c)) for c in head) + "</tr></thead><tbody>")
+            # Tag the two prose-heavy tables so their columns can be sized in CSS. With
+            # table-layout:fixed and no widths, a 1200-char explanation column gets the same share
+            # as a 3-character severity column, which is unreadable.
+            _h0 = (head[0] if head else "").strip().lower()
+            tcls = ""
+            if _h0 == "sev":
+                tcls = " class='t-bugs'"
+            elif _h0.startswith("class / method"):
+                tcls = " class='t-ct'"
+            body.append("<table%s><thead><tr>" % tcls + "".join("<th>%s</th>" % _inline(_esc(c)) for c in head) + "</tr></thead><tbody>")
             while i < len(lines) and lines[i].startswith("|"):
-                body.append("<tr>" + "".join("<td>%s</td>" % _inline(_esc(c)) for c in cells(lines[i])) + "</tr>")
+                rc = cells(lines[i])
+                # Colour latent-bug rows by their severity letter (first cell "A".."E").
+                sev_cls = ""
+                if rc and rc[0].strip().upper() in ("A", "B", "C", "D", "E"):
+                    sev_cls = " class='sev-%s'" % rc[0].strip().lower()
+                body.append("<tr%s>" % sev_cls + "".join("<td>%s</td>" % _inline(_esc(c)) for c in rc) + "</tr>")
                 i += 1
             body.append("</tbody></table>")
             continue
+        # Headings carry an id so the action-required banner's [jump](#...) link resolves.
         if ln.startswith("### "):
-            body.append("<h3>%s</h3>" % _inline(_esc(ln[4:])))
+            body.append("<h3 id='%s'>%s</h3>" % (_slug(ln[4:]), _inline(_esc(ln[4:]))))
         elif ln.startswith("## "):
-            body.append("<h2>%s</h2>" % _inline(_esc(ln[3:])))
+            body.append("<h2 id='%s'>%s</h2>" % (_slug(ln[3:]), _inline(_esc(ln[3:]))))
         elif ln.startswith("# "):
-            body.append("<h1>%s</h1>" % _inline(_esc(ln[2:])))
+            body.append("<h1 id='%s'>%s</h1>" % (_slug(ln[2:]), _inline(_esc(ln[2:]))))
         elif ln.strip() == "---":
             body.append("<hr/>")
         elif ln.startswith("- ") or ln.startswith("  - "):
             body.append("<li>%s</li>" % _inline(_esc(ln.lstrip().lstrip("- "))))
         elif ln.strip() == "":
             body.append("")
+        elif ln.startswith("!!! "):
+            # Red warning callout. Used by the action-required banner and the latent-bugs section.
+            body.append("<div class='bugwarn'>%s</div>" % _inline(_esc(ln[4:])))
         elif ln.strip().startswith("_") and ln.strip().endswith("_"):
             body.append("<p class='note'>%s</p>" % _inline(_esc(ln.strip()[1:-1])))
         else:
             body.append("<p>%s</p>" % _inline(_esc(ln)))
         i += 1
-    css = ("body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#1b1f23}"
+    css = ("body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:1400px;margin:2rem auto;padding:0 1rem;color:#1b1f23}"
            "h1{border-bottom:2px solid #eaecef;padding-bottom:.3em}h2{border-bottom:1px solid #eaecef;padding-bottom:.2em;margin-top:1.8em}"
-           "table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:13px}th,td{border:1px solid #d0d7de;padding:5px 9px;text-align:left}"
+           "table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:13px;table-layout:fixed}"
+           "th,td{border:1px solid #d0d7de;padding:5px 9px;text-align:left}"
+           # Long single tokens (test names like Upsert_Find..._QueryFiltersAreIgnored, method names,
+           # file paths) have no wrap opportunity and push tables wider than the page, forcing a
+           # horizontal scroll to read any detail. Break inside words instead.
+           "th,td,code{overflow-wrap:anywhere;word-break:break-word}"
            "th{background:#f6f8fa}tr:nth-child(even){background:#fafbfc}code{background:#eff1f3;padding:1px 5px;border-radius:4px;font-size:12px}"
-           ".note{color:#57606a;font-style:italic}hr{border:0;border-top:1px solid #eaecef;margin:1.5em 0}")
+           ".note{color:#57606a;font-style:italic}hr{border:0;border-top:1px solid #eaecef;margin:1.5em 0}"
+           # Action-required callouts + severity-tinted latent-bug rows.
+           ".bugwarn{background:#fff5f5;border:1px solid #f5b5b5;border-left:5px solid #cf222e;"
+           "color:#82071e;padding:.7em .9em;margin:.6em 0;border-radius:4px;font-weight:600}"
+           "h2:has(+ .bugwarn),h2:has(+ p + .bugwarn){color:#cf222e;border-bottom-color:#f5b5b5}"
+           "tr.sev-a td{background:#ffebe9}tr.sev-a td:first-child{background:#cf222e;color:#fff;"
+           "font-weight:700;text-align:center}"
+           "tr.sev-b td{background:#fff1e5}tr.sev-b td:first-child{background:#bc4c00;color:#fff;"
+           "font-weight:700;text-align:center}"
+           "tr.sev-c td{background:#fff8c5}tr.sev-c td:first-child{background:#9a6700;color:#fff;"
+           "font-weight:700;text-align:center}"
+           "tr.sev-d td:first-child,tr.sev-e td:first-child{background:#eaeef2;font-weight:700;"
+           "text-align:center}"
+           # Column widths for the two prose-heavy tables, so the explanation gets the space and
+           # nothing overflows the page. Section 7: Sev | Class/Method | Where | What looks wrong | Pinned by
+           ".t-bugs th:nth-child(1),.t-bugs td:nth-child(1){width:3rem}"
+           ".t-bugs th:nth-child(2),.t-bugs td:nth-child(2){width:17%}"
+           ".t-bugs th:nth-child(3),.t-bugs td:nth-child(3){width:9%}"
+           ".t-bugs th:nth-child(5),.t-bugs td:nth-child(5){width:17%}"
+           # Sections 6a/6b: Class/Method | Where | Why not unit-testable | Category | Mitigation
+           ".t-ct th:nth-child(1),.t-ct td:nth-child(1){width:16%}"
+           ".t-ct th:nth-child(2),.t-ct td:nth-child(2){width:6%}"
+           ".t-ct th:nth-child(4),.t-ct td:nth-child(4){width:11%}"
+           ".t-ct th:nth-child(5),.t-ct td:nth-child(5){width:22%}")
     return "<!doctype html><html><head><meta charset='utf-8'><title>Unit Test Report</title><style>%s</style></head><body>\n%s\n</body></html>\n" % (css, "\n".join(body))
 
 
@@ -522,8 +642,14 @@ def render_cannot_test_md(cannot_test, repo, report_date, headline=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cobertura", required=True)
+    ap.add_argument("--cobertura")
     ap.add_argument("--manifest", required=True)
+    ap.add_argument("--print-file-filter", action="store_true",
+                    help="resolve the manifest's ReportGenerator filefilter, print it, and exit. "
+                         "Lets report.sh and CI share one definition instead of retyping it.")
+    ap.add_argument("--repo-root", default=".",
+                    help="repo root used to test whether a declared vendored_paths entry exists")
+    ap.add_argument("--print-kit-version", action="store_true")
     ap.add_argument("--summary", help="append the Markdown report to this file (e.g. $GITHUB_STEP_SUMMARY)")
     ap.add_argument("--repo-filter", help="only files whose path contains this substring")
     ap.add_argument("--needs-attention-top", type=int, default=15)
@@ -537,13 +663,27 @@ def main():
     args = ap.parse_args()
     args.base = _safe_ref(args.base)
 
+    if args.print_kit_version:
+        print(KIT_VERSION)
+        sys.exit(0)
+
     with open(args.manifest, encoding="utf-8") as fh:
         m = yaml.safe_load(fh)
+
+    # Query modes resolve from the manifest alone, before any coverage is needed.
+    if args.print_file_filter:
+        print(resolve_file_filter(m, args.repo_filter, args.repo_root))
+        sys.exit(0)
+
+    if not args.cobertura:
+        ap.error("--cobertura is required unless --print-file-filter is given")
+
     exclusions = m.get("exclusions") or []
     category_map = m.get("category_map") or {}
     gate = m.get("gate") or {}
     baseline = (m.get("baseline") or {}).get("recorded_overall") or {}
     floor_c0, floor_c1 = baseline.get("c0"), baseline.get("c1")
+    baseline_scope_lines = (m.get("baseline") or {}).get("scope_lines")
     target = m.get("target") or {}
     target_c0, target_c1 = target.get("c0"), target.get("c1")
     cannot_test = m.get("cannot_test") or []
@@ -666,10 +806,36 @@ def main():
     def short(fn):
         return "/".join(fn.split("/")[-2:])
 
+    # ---- Scope-size sanity ----
+    # A filefilter mistake does not look like a filter mistake, it looks like a
+    # coverage collapse: the denominator grows, the percentage craters, and the
+    # ratchet fails as though tests were deleted. Comparing the in-scope line
+    # total against the size recorded at baseline separates "we regressed" from
+    # "we are measuring different code", which is a much cheaper thing to be
+    # told than to work out from a failing gate.
+    scope_lines = inscope[1]
+    scope_warning = None
+    if baseline_scope_lines:
+        ratio = scope_lines / float(baseline_scope_lines)
+        if ratio > 1.5 or ratio < 0.67:
+            scope_warning = (
+                "in-scope size is %.1fx the baseline (%s lines now vs %s recorded). "
+                "Check the filefilter before trusting this number: an unexcluded vendored or "
+                "sibling-repo directory inflates the denominator and looks like a regression."
+                % (ratio, "{:,}".format(scope_lines), "{:,}".format(int(baseline_scope_lines)))
+            )
+
     # ---- Ratchet ----
     ratchet_on = gate.get("ratchet", True)
     ratchet_fail = False
     gate_lines = []
+    if scope_warning:
+        gate_lines.append("- **Scope size**: ⚠️ %s" % scope_warning)
+    elif not baseline_scope_lines:
+        gate_lines.append(
+            "- **Scope size**: %s in-scope lines (not compared: stamp `baseline.scope_lines` "
+            "in the manifest to enable the filter sanity check)." % "{:,}".format(scope_lines)
+        )
     if ratchet_on and floor_c0 is not None and floor_c1 is not None:
         c0f = round(c0, 1) < float(floor_c0)
         c1f = round(c1, 1) < float(floor_c1)
@@ -800,6 +966,27 @@ def main():
         out.append("> ⚠️ **%d test(s) FAILING in this run.** Coverage measured off a red suite is "
                    "unreliable — do NOT record or trust a baseline until the suite is green. Fix the "
                    "failures, then re-measure.\n" % tr["failed"])
+
+    # ---- ACTION REQUIRED banner ----
+    # The frozen-bug backlog is the first thing a reader sees, rather than being buried under seven
+    # sections. Without this, section 7 is below the fold in a long report and the "green suite,
+    # live bugs" caveat reaches nobody. Links to section 7.
+    _latent_top = m.get("latent_bugs") or []
+    if _latent_top:
+        _sev_counts = {}
+        for _b in _latent_top:
+            _s = (_b.get("severity") or "D").strip().upper()[:1]
+            _sev_counts[_s] = _sev_counts.get(_s, 0) + 1
+        _act = sum(v for k, v in _sev_counts.items() if k in ("A", "B", "C"))
+        _parts = ", ".join("%d %s" % (_sev_counts[k], k) for k in ("A", "B", "C")
+                           if _sev_counts.get(k))
+        out.append("!!! ACTION REQUIRED: %d latent product bugs are FROZEN, NOT FIXED (%d need "
+                   "resolving: %s). The suite is GREEN because the tests pin what the code does "
+                   "TODAY, wrong behaviour included, so green means \"behaviour has not drifted\", "
+                   "NOT \"behaviour is correct\". "
+                   "[Jump to section 7 for the list](#%s)"
+                   % (len(_latent_top), _act, _parts, _slug(LATENT_HEADING)))
+        out.append("")
 
     # 1. Test Results
     out.append("## 1. Test Results")
@@ -976,9 +1163,20 @@ def main():
 
     # 5b. Partially testable (mixed) files: the testable carve-out slice kept IN scope inside an
     # excluded file, emitted PER FILE so a mixed file is never hidden behind one folder-glob line.
-    def _clip1(s, n=120):
+    # Clip limits across the prose tables are deliberately generous. They used to be ~110-120 chars,
+    # which truncated every reason and mitigation mid-sentence, so the detail could not be read at
+    # all, scroll or no scroll. Cells wrap now (overflow-wrap in the CSS), so the limits exist only
+    # as a guard against a pathological entry, not as a layout device.
+    def _clip1(s, n=1200):
         s = (s or "").replace("\n", " ").strip()
         return s[:n - 1] + "…" if len(s) > n else s
+
+    def tcell(s):
+        """Escape a value for a markdown TABLE cell. Reasons quote C# such as `a || b`, and a bare
+        pipe is the cell delimiter, so an unescaped one silently splits the row into extra columns.
+        md_to_html splits on unescaped pipes only and unescapes for display.
+        Defined here, before its first use in 5b, so every later section can reuse it."""
+        return str(s or "").replace("|", "\\|")
     out.append("\n## 5b. Partially testable (mixed) files")
     out.append("_Excluded files that still carry a testable carve-out slice. The listed methods are IN "
                "scope (their lines count toward Adjusted and diff coverage); the rest of the file is "
@@ -1006,8 +1204,8 @@ def main():
         for fnm, names, tlc, tl, cat, rest in mixed_rows:
             nm = ", ".join("`%s`" % n for n in names[:6]) + (" …(+%d)" % (len(names) - 6) if len(names) > 6 else "")
             covtxt = ("%.0f%%" % (100.0 * tlc / tl)) if tl else "n/a"
-            resttxt = _clip1(rest) if rest else ("(%s; no per-method reason recorded)" % cat)
-            out.append("| `%s` | %s | %s | %s |" % (fnm, nm or "—", covtxt, resttxt))
+            resttxt = tcell(_clip1(rest)) if rest else ("(%s; no per-method reason recorded)" % cat)
+            out.append("| `%s` | %s | %s | %s |" % (tcell(fnm), nm or "n/a", covtxt, resttxt))
     else:
         out.append("_None: no excluded file declares a carve-out._")
     if ambiguous:
@@ -1018,7 +1216,7 @@ def main():
             out.append(">  - `%s` (matches %d files)" % (pat, n))
 
     # 6. Not Testable — split by NATURE, because "should trend to zero" is only true for debt.
-    def clip(s, n=110):
+    def clip(s, n=1500):
         s = (s or "").replace("\n", " ")
         return s[:n - 3] + "…" if len(s) > n else s
 
@@ -1035,9 +1233,10 @@ def main():
             for ct in rows:
                 cat = canonical_category(ct.get("category"))
                 lines = ct.get("lines") or "—"
-                mitigation = clip(ct.get("mitigation")) or ACTION.get(cat, "Review")
+                mitigation = tcell(clip(ct.get("mitigation"), 800)) or ACTION.get(cat, "Review")
                 out.append("| `%s` | %s | %s | %s | %s |"
-                           % (ct.get("target", "—"), lines, clip(ct.get("reason", "")), cat, mitigation))
+                           % (tcell(ct.get("target", "n/a")), lines,
+                              tcell(clip(ct.get("reason", ""))), cat, mitigation))
 
         # 6a — design debt: fixable by a source change, SHOULD trend to zero.
         out.append("\n### 6a. Design debt — fixable by a seam/refactor; should trend to zero")
@@ -1076,6 +1275,57 @@ def main():
         else:
             out.append("_None._")
 
+    # 7. Latent bugs frozen by characterization.
+    # A characterization backfill pins what the code does TODAY, wrong behaviour included, so some
+    # tests assert a bug on purpose. Without this section, "554 tests, all green" reads as "the code
+    # is correct" when it actually means "behaviour has not drifted". The defect backlog therefore
+    # lives in the artifact people actually read, sorted by severity, in red.
+    #
+    # This is a DEFECT BACKLOG, not a coverage exemption: it does not affect scope, the Adjusted
+    # number, the ratchet, or the diff gate. Untestable *code* still goes to cannot_test.
+    latent = m.get("latent_bugs") or []
+    if latent:
+        counts = {}
+        for b in latent:
+            sev = (b.get("severity") or "D").strip().upper()[:1]
+            counts[sev] = counts.get(sev, 0) + 1
+        act = sum(v for k, v in counts.items() if k in ("A", "B", "C"))
+
+        out.append("\n## %s" % LATENT_HEADING)
+        out.append("")
+        out.append("!!! %d known product bugs are FROZEN, NOT FIXED. %d of them are severity A/B/C and "
+                   "need resolving. The tests below pin what the code does TODAY, wrong behaviour "
+                   "included, so the suite is GREEN while these bugs are live. A green suite here means "
+                   "\"behaviour has not drifted\", NOT \"behaviour is correct\"."
+                   % (len(latent), act))
+        out.append("")
+        out.append("!!! Fixing any item REQUIRES updating or deleting its characterization test in the "
+                   "same change. Several tests assert the bug on purpose, so a correct fix will turn the "
+                   "suite red until its test is updated.")
+        out.append("")
+        out.append("| Severity | Count |")
+        out.append("|----------|------:|")
+        for sev in sorted(counts, key=lambda s: SEV_ORDER.get(s, 9)):
+            out.append("| %s | %d |" % (SEV_LABEL.get(sev, sev), counts[sev]))
+        out.append("| **Total** | **%d** |" % len(latent))
+
+        for sev in sorted(counts, key=lambda s: SEV_ORDER.get(s, 9)):
+            rows = [b for b in latent
+                    if (b.get("severity") or "D").strip().upper().startswith(sev)]
+            out.append("\n### 7%s. %s" % (chr(ord("a") + SEV_ORDER.get(sev, 9)), SEV_LABEL.get(sev, sev)))
+            out.append("| Sev | Class / Method | Where | What looks wrong | Pinned by |")
+            out.append("|-----|----------------|-------|------------------|-----------|")
+            for b in rows:
+                out.append("| %s | `%s` | %s | %s | %s |"
+                           % (sev,
+                              tcell(b.get("target", "n/a")),
+                              ("`%s`" % tcell(b["file"])) if b.get("file") else "n/a",
+                              tcell(clip(b.get("summary", ""), 1200)),
+                              tcell(clip(b.get("pinned_by", ""), 300))))
+        out.append("")
+        out.append("_Source of truth: `latent_bugs:` in `.claude/coverage/refs/coverage-manifest.yml`. "
+                   "Remove an entry when the bug is fixed and its characterization test updated._")
+
     out.append("\n---")
     out.append("_Full per-file drill-down: `coverage/html/summary.html` · exclusion reasons & cannot_test: `.claude/coverage/refs/coverage-manifest.yml`_")
 
@@ -1101,7 +1351,7 @@ def main():
     if gate_active:
         print("\n[coverage-gate] %s" % ("PASS" if not gate_failed else "FAIL"), file=sys.stderr)
         for g in gate_lines:
-            print("[coverage-gate] " + g.replace("✅", "").replace("❌", "").replace("**", "").strip().lstrip("- "), file=sys.stderr)
+            print("[coverage-gate] " + g.replace("✅", "").replace("❌", "").replace("⚠️", "WARNING:").replace("**", "").strip().lstrip("- "), file=sys.stderr)
     sys.exit(1 if gate_failed else 0)
 
 

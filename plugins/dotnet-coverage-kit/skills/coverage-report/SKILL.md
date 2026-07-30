@@ -39,13 +39,26 @@ don't re-derive numbers by hand.
    numbers. All numbers come from the tool + the deterministic join in `coverage-gate.py`; the
    model does not parse XML or compute percentages.
 
-2. **Append the one narrated section — Observations.** The script's report is complete and
-   deterministic (verdict, headline, Do-next, insights, by-bucket). The *only* thing the model
-   adds is **Observations**: suspected-latent-bug entries surfaced during generation (frozen,
-   not endorsed). Append them under an `## Observations` heading; add nothing else.
+   The script prints `KIT_VERSION=` and `FILE_FILTER=` before collecting. **Check both.** If
+   `KIT_VERSION` is behind `${CLAUDE_PLUGIN_ROOT}/scripts/coverage-gate.py`, the repo's copies
+   under `.claude/coverage/tools/` are stale: say so and offer to refresh them, because a
+   half-updated copy can run the whole suite and only then fail. If `FILE_FILTER` lacks an
+   exclusion for a shared directory that is present in the repo, stop and fix
+   `scope.vendored_paths` before trusting the number.
+
+2. **Latent bugs are DATA, not narration.** The script's report is complete and deterministic
+   (verdict, headline, Do-next, insights, by-bucket, and the red section 7). Suspected bugs frozen
+   by characterization belong in manifest `latent_bugs:`, where `coverage-gate.py` renders them as
+   section 7 plus the ACTION REQUIRED banner. Put them there, not in a hand-written section: the
+   report is regenerated on every run, so appended prose is lost, and a defect backlog that
+   evaporates is worse than none. Verify the banner's A/B/C count matches what the backfill found,
+   and add no narrated section of your own.
 
 3. **At baseline only.** Write the measured Adjusted overall into `baseline.recorded_overall`
    (with `basis: in-scope`) so it becomes the ratchet floor. Not on ordinary report runs.
+   Stamp `baseline.scope_lines` at the same time, from the report's "Total lines (Adjusted)"
+   denominator. It is what lets the gate distinguish a real regression from a filter mistake:
+   without it, a scoping error presents as a coverage collapse and the ratchet blames the tests.
 
 ## Report shape — the Unit Test Report (produced by `coverage-gate.py`)
 
@@ -82,7 +95,7 @@ coverage is two-pass throughout — **Adjusted** (target set, the headline + rat
                        6b Structural (compiler/unreachable/dead/framework-mismatch — will NOT move).
                        Columns: target · where (lines) · why · category · mitigation. A systematic-
                        seam callout quantifies clusters (e.g. "N share Guid.NewGuid → one seam").
-## Observations        (appended by the model) frozen latent-bug notes, if any
+## 7. Latent bugs   (rendered from manifest `latent_bugs:`) red, ACTION REQUIRED, if any
 ```
 
 Honest-reporting rules baked into the generator (do not "fix" these to mimic a different stack):
