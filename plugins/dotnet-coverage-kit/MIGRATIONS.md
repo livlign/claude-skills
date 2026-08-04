@@ -62,6 +62,32 @@ no kit checkout in sight (CI) is a silent no-op.
 
 ---
 
+## v0.17.0 A repo-local tool edit survives a sync, and the test-project exclude belongs in the manifest
+
+**Detect:** `.claude/coverage/tools/.kit-installed.json` is absent, OR `run-coverage.sh` was edited
+in-repo (a "REPO-LOCAL ADDITION" comment is the usual tell), OR the coverage workflow sets
+`TEST_PROJECT_EXCLUDE` in its env block while `scope.test_project_exclude` in the manifest is empty.
+
+**Apply:** two fixes to one incident. A repo carried a documented local change to `run-coverage.sh`
+(a `TEST_PROJECT_EXCLUDE` knob dropping two Lambda test projects that are deliberately not solution
+members) and the v0.16.0 auto-sync overwrote it. The only reason anyone noticed was CI hard-failing
+on the solution-membership guard.
+
+1. The knob is now upstream, resolved as env first, then `scope.test_project_exclude` in the manifest.
+   Move the value out of the CI env block and out of the script into the manifest, where one
+   declaration serves CI and local runs alike. A value living only in CI hard-fails every local
+   report; a value living only in the script is lost at the next refresh, which is exactly what
+   happened.
+2. `kit-sync` now records a hash of every file it writes in `.kit-installed.json` (committed). A copy
+   that differs from BOTH the kit and that record is treated as deliberately modified: it is reported
+   and NOT overwritten, and `--force` is the explicit way through. On the first sync after adopting
+   this version there is no record yet, so the previous copy is kept as `<name>.pre-sync` rather than
+   assumed disposable.
+
+**Gate:** `auto` for the sync guard and the record. `sign-off` for moving a
+`TEST_PROJECT_EXCLUDE` value into `scope.test_project_exclude`, because which test projects are
+discovered decides what the suite actually runs, and that is a scope decision.
+
 ## v0.16.0 Kit updates install themselves, and the coverage job runs only for PRs to master
 
 **Detect:** `.claude/coverage/tools/kit-sync.py` is absent, OR the coverage workflow's `coverage` job

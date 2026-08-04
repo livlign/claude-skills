@@ -39,8 +39,31 @@ TEST_FILTER="${TEST_FILTER:-}"
 # (the Code Coverage collector does not reliably emit one file per assembly in a combined run),
 # which silently undercounts. Discover test projects (those referencing Microsoft.NET.Test.Sdk)
 # and run each into its own results subdir; ReportGenerator then merges all cobertura natively.
+#
+# TEST_PROJECT_EXCLUDE is an extended-regex of csproj paths to DROP from discovery, for test
+# projects that are deliberately not solution members (e.g. a Lambda test project that binds live
+# AWS clients at construction and is e2e-scope in the manifest). Without it the solution-membership
+# guard below hard-fails on them. It resolves env first, then `scope.test_project_exclude` in the
+# manifest, so ONE declaration serves both CI and a local run: a value living only in a CI env block
+# silently hard-fails every local report, and a value living only in this script is lost the next
+# time these scripts are refreshed from the kit.
+# Keep it narrow. It must only ever name projects the manifest already classifies out of unit scope,
+# never a project whose absence would hide a real regression.
+if [[ -z "${TEST_PROJECT_EXCLUDE:-}" ]]; then
+  _HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  _MANIFEST="$(dirname "$RUNSETTINGS")/coverage-manifest.yml"
+  if [[ -f "$_HERE/coverage-gate.py" && -f "$_MANIFEST" ]]; then
+    TEST_PROJECT_EXCLUDE="$(python "$_HERE/coverage-gate.py" --manifest "$_MANIFEST" \
+      --print-test-project-exclude 2>/dev/null || true)"
+  fi
+fi
+if [[ -n "${TEST_PROJECT_EXCLUDE:-}" ]]; then
+  echo "TEST_PROJECT_EXCLUDE=$TEST_PROJECT_EXCLUDE (matching test projects are not discovered)"
+fi
 mapfile -t TEST_PROJECTS < <(grep -rl --include='*.csproj' 'Microsoft.NET.Test.Sdk' . \
-  | grep -vE '/(bin|obj)/' | sort -u)
+  | grep -vE '/(bin|obj)/' \
+  | { if [[ -n "${TEST_PROJECT_EXCLUDE:-}" ]]; then grep -vE "$TEST_PROJECT_EXCLUDE"; else cat; fi; } \
+  | sort -u)
 if [[ ${#TEST_PROJECTS[@]} -eq 0 ]]; then
   echo "No test projects (Microsoft.NET.Test.Sdk) found under $(pwd)." >&2
   exit 1

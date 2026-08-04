@@ -39,13 +39,13 @@ except ImportError:
 
 # Bumped whenever the installed tools/ scripts change in a way a repo should pick
 # up. report.sh prints it, so a stale copy in a repo is visible without diffing.
-KIT_VERSION = "2.3.0"
+KIT_VERSION = "2.4.0"
 
 # The PLUGIN version these scripts ship with (KIT_VERSION above tracks the script contract; this
 # tracks the kit release, and is bumped alongside .claude-plugin/plugin.json). It exists so that any
 # run can compare itself against the manifest's `kit_version:` stamp and say "this repo has not been
 # brought up to the current kit yet" without anyone having to remember to ask. See MIGRATIONS.md.
-KIT_SEMVER = "0.16.0"
+KIT_SEMVER = "0.17.0"
 
 # Section 7's heading text, used both to emit the heading and to build the banner's jump anchor via
 # _slug(). One constant so the link and the target cannot drift apart.
@@ -866,6 +866,10 @@ def main():
                          "Lets report.sh and CI share one definition instead of retyping it.")
     ap.add_argument("--repo-root", default=".",
                     help="repo root used to test whether a declared vendored_paths entry exists")
+    ap.add_argument("--print-test-project-exclude", action="store_true",
+                    help="print `scope.test_project_exclude` (an extended-regex of csproj paths that "
+                         "run-coverage.sh drops from discovery) and exit. Keeps the value in ONE place "
+                         "so CI and a local run cannot disagree.")
     ap.add_argument("--print-kit-version", action="store_true")
     ap.add_argument("--print-kit-drift", action="store_true",
                     help="print `<state> <manifest kit_version> <kit semver>` (state: current|behind|"
@@ -904,6 +908,10 @@ def main():
 
     if args.print_file_filter:
         print(resolve_file_filter(m, args.repo_filter, args.repo_root))
+        sys.exit(0)
+
+    if args.print_test_project_exclude:
+        print(((m.get("scope") or {}).get("test_project_exclude") or "").strip())
         sys.exit(0)
 
     if not args.cobertura:

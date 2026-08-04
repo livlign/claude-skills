@@ -10,6 +10,8 @@ no live-repo coverage otherwise:
   - section 6 split into 6a (design debt) / 6b (structural)
   - category-alias normalization (framework_mismatch -> framework-mismatch, requires-seam -> requires-source-change)
   - systematic-seam cluster callout (>=3 entries sharing Guid.NewGuid)
+  - kit-sync: leaves a locally MODIFIED tool copy alone (regression: it once silently
+    overwrote a documented repo-local change and only CI noticed)
   - kit-sync: refreshes stale tool copies + `auto` manifest migrations, preserves the
     manifest's comments, is idempotent, and never rewrites a workflow
   - scope-change guard: added TEST files are ignored (a PR that only adds tests must stay green),
@@ -20,7 +22,7 @@ Run:  python3 scripts/tests/test_coverage_gate.py
 Exit: 0 = pass (or SKIP if PyYAML unavailable and can't be installed), 1 = a failure.
 PyYAML is a documented kit dependency; CI installs it, so the test runs there.
 """
-import os, subprocess, sys, tempfile, textwrap
+import io, os, subprocess, sys, tempfile, textwrap
 
 GATE = os.path.join(os.path.dirname(__file__), "..", "coverage-gate.py")
 
@@ -422,6 +424,57 @@ def sync_checks():
     return fails
 
 
+def local_edit_checks():
+    """A repo-local edit to a tool script must survive a sync.
+
+    This is a regression test for a real incident: a repo carried a documented TEST_PROJECT_EXCLUDE
+    change in run-coverage.sh, the auto-sync overwrote it, and the only signal was CI hard-failing on
+    the solution-membership guard. The sync now records what it writes, so a copy differing from BOTH
+    the kit and that record is a deliberate edit and is left alone.
+    """
+    fails = 0
+    kit = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, ".claude/coverage/refs/coverage-manifest.yml", STALE_MANIFEST)
+
+        def run(*extra):
+            p = subprocess.run([sys.executable, os.path.abspath(SYNC), "--repo", d, "--kit", kit]
+                               + list(extra), capture_output=True, text=True, encoding="utf-8",
+                               errors="replace")
+            return p.returncode, p.stdout + p.stderr
+
+        run()                                     # baseline install, writes the record
+        rc_path = os.path.join(d, ".claude", "coverage", "tools", ".kit-installed.json")
+        fails += check("local-edit: install record written", os.path.isfile(rc_path), rc_path)
+
+        tool = os.path.join(d, ".claude", "coverage", "tools", "run-coverage.sh")
+        with io.open(tool, "a", encoding="utf-8") as fh:
+            fh.write("# REPO-LOCAL TWEAK" + chr(10))
+        rc, out = run()
+        body = io.open(tool, encoding="utf-8").read()
+        fails += check("local-edit: modified tool is NOT overwritten", "REPO-LOCAL TWEAK" in body, out)
+        fails += check("local-edit: it is reported, not silent", "locally MODIFIED" in out, out)
+        fails += check("local-edit: names the way through", "--force" in out, out)
+
+        rc, out = run("--force")
+        body = io.open(tool, encoding="utf-8").read()
+        fails += check("local-edit: --force discards it", "REPO-LOCAL TWEAK" not in body, out)
+
+    # No record yet (first sync after adopting this version): the old copy is kept, not assumed junk.
+    with tempfile.TemporaryDirectory() as d2:
+        _write(d2, ".claude/coverage/refs/coverage-manifest.yml", STALE_MANIFEST)
+        _write(d2, ".claude/coverage/tools/run-coverage.sh", "# ancient copy")
+        p = subprocess.run([sys.executable, os.path.abspath(SYNC), "--repo", d2, "--kit", kit],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        bak = os.path.join(d2, ".claude", "coverage", "tools", "run-coverage.sh.pre-sync")
+        fails += check("local-edit: unrecorded copy is backed up", os.path.isfile(bak),
+                       p.stdout + p.stderr)
+        if os.path.isfile(bak):
+            fails += check("local-edit: backup holds the old content",
+                           io.open(bak, encoding="utf-8").read() == "# ancient copy", "")
+    return fails
+
+
 def unit_checks():
     """is_test_source: directory-segment detection, and the words it must NOT mistake for tests."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(GATE)))
@@ -519,6 +572,7 @@ def main():
         fails += enforcement_checks()
         fails += scope_guard_checks()
         fails += sync_checks()
+        fails += local_edit_checks()
 
         if fails:
             print("\n%d check(s) FAILED (gate exit %d)" % (fails, r.returncode))

@@ -48,6 +48,12 @@ SEED = {
 
 MANIFEST_REL = ".claude/coverage/refs/coverage-manifest.yml"
 
+# Hashes of what this tool last WROTE, so a later run can tell "stale copy, safe to replace" from
+# "someone edited this on purpose, do not touch". Without it the sync cannot see the difference, and
+# it silently destroyed a documented repo-local change to run-coverage.sh in a real repo: CI caught
+# it, which is the only reason anyone found out. Committed alongside the tools it describes.
+RECORD_REL = ".claude/coverage/tools/.kit-installed.json"
+
 # report.sh is the one file whose replacement the caller must react to: bash reads a running script
 # incrementally, so overwriting it mid-run can corrupt execution.
 REEXEC_SENTINEL = "scripts/report.sh"
@@ -67,6 +73,23 @@ def write(path, text):
     # rewrite every line and produce a diff that looks like a change nobody made.
     with io.open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
+
+
+def sha(text):
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def load_record(repo):
+    try:
+        return json.loads(read(os.path.join(repo, RECORD_REL)))
+    except Exception:
+        return {}
+
+
+def save_record(repo, record):
+    write(os.path.join(repo, RECORD_REL),
+          json.dumps(record, indent=2, sort_keys=True) + chr(10))
 
 
 def kit_semver(kit_root):
@@ -268,6 +291,9 @@ def main():
     ap.add_argument("--production-branch", default="master")
     ap.add_argument("--check", action="store_true", help="report what WOULD change; write nothing")
     ap.add_argument("--quiet", action="store_true", help="print nothing when already up to date")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite tool copies even when they look locally modified, discarding the "
+                         "local change. Only after the change is upstreamed into the kit.")
     args = ap.parse_args()
 
     repo = os.path.abspath(args.repo)
@@ -286,18 +312,43 @@ def main():
 
     semver = kit_semver(kit)
     actions, notes, reexec = [], [], False
+    record = load_record(repo)
+    record_dirty = False
 
     for src_rel, dst_rel in TOOLS.items():
         src, dst = os.path.join(kit, src_rel), os.path.join(repo, dst_rel)
         if not os.path.isfile(src):
             continue
         new = read(src)
-        if os.path.isfile(dst) and read(dst) == new:
+        exists = os.path.isfile(dst)
+        cur = read(dst) if exists else None
+        if exists and cur == new:
+            # Already current. Record the hash if this copy predates the record, so the next run can
+            # still tell a later local edit from a stale copy.
+            if record.get(dst_rel) != sha(new):
+                record[dst_rel] = sha(new); record_dirty = True
             continue
-        actions.append("%s %s" % ("update" if os.path.isfile(dst) else "install", dst_rel))
+        # LOCAL EDIT GUARD: the file differs from the incoming kit AND from whatever we last wrote,
+        # so someone changed it deliberately. Overwriting that is how a repo-local fix disappears
+        # with no trace. Report it and move on; --force is the deliberate way through.
+        if exists and dst_rel in record and record[dst_rel] != sha(cur) and not args.force:
+            notes.append("%s is locally MODIFIED (differs from both the kit and the copy this tool "
+                         "installed). NOT overwritten. Upstream the change into the kit, or re-run "
+                         "with --force to discard it." % dst_rel)
+            continue
+        if exists and dst_rel not in record and not args.force:
+            # No record at all (first sync after adopting this version). We cannot prove the copy is
+            # unmodified, so keep a backup rather than assume.
+            bak = dst + ".pre-sync"
+            actions.append("update %s (previous copy kept at %s)" % (dst_rel, os.path.basename(bak)))
+            if not args.check:
+                write(bak, cur)
+        else:
+            actions.append("%s %s" % ("update" if exists else "install", dst_rel))
         if not args.check:
             write(dst, new)
             shutil.copymode(src, dst)
+            record[dst_rel] = sha(new); record_dirty = True
             if src_rel == REEXEC_SENTINEL:
                 reexec = True
 
@@ -341,6 +392,9 @@ def main():
         notes.append("no %s here; run `coverage-init` first." % MANIFEST_REL)
 
     notes.extend(check_workflow(repo, args.production_branch))
+
+    if record_dirty and not args.check:
+        save_record(repo, record)
 
     if actions or notes:
         head = "[kit-sync] kit %s%s" % (semver or "?", " (check only, nothing written)" if args.check else "")

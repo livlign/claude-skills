@@ -74,6 +74,22 @@ scope:
   # however it arrived. A vendoring migration does not transfer test ownership.
   vendored_paths: []   # e.g. ["sharedlib", "base-infra-kafka", "shared-asset-lib"]
 
+  # TEST PROJECTS TO DROP FROM DISCOVERY: an extended-regex of csproj paths. Normally empty.
+  #
+  # For a test project that is deliberately NOT a solution member (a Lambda test project binding live
+  # AWS clients at construction, say, already classified e2e-scope here). `run-coverage.sh` hard-fails
+  # on a discovered test project the solution does not build, because such a project runs 0 tests and
+  # still exits 0, which is a silent undercount. This is how you say "that one is meant to be absent".
+  #
+  # Declared HERE, not in a CI env block and not by editing run-coverage.sh: a value living only in CI
+  # hard-fails every local report, and a value living only in the script is lost the next time the
+  # tools are refreshed from the kit. `TEST_PROJECT_EXCLUDE` in the environment still wins for a
+  # one-off.
+  #
+  # Keep it narrow. Only ever name projects the manifest already classifies out of unit scope; never
+  # one whose absence would hide a real regression.
+  test_project_exclude: ""   # e.g. "/Services/Lambda/"
+
 gate:
   # WHICH CHECKS MAY FAIL CI. Default (absent or false): NONE of them.
   #
