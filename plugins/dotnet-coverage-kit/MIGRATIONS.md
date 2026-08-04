@@ -44,15 +44,90 @@ automatic, application is not always safe):
 
 | Entry point | On drift |
 |---|---|
-| `coverage-report` | Report it. Apply NOTHING to the manifest. A report that quietly changed scope would make its own numbers unreproducible, and the drift note plus one sentence naming `coverage-redo` is the whole job. Refreshing stale `.claude/coverage/tools/` copies is the one thing it offers to fix, as it already does. |
+| `coverage-report` | `report.sh` runs `kit-sync.py` first, so the stale `.claude/coverage/tools/` copies and the `auto` manifest entries are ALREADY applied by the time the report renders (that is the whole point: pulling a kit reaches every repo by running it). Report what the sync did, apply NOTHING further to the manifest, and name `coverage-redo` for the `sign-off` entries. A report that quietly changed the measured scope would make its own numbers unreproducible, which is exactly why `sign-off` entries are never auto-applied. |
 | `generate-tests` | Apply the `auto` entries that govern how THIS pass runs (tool refresh, fan-out contract, frozen-bug recording), because running a backfill on superseded mechanics wastes the whole pass. Surface `sign-off` entries and do NOT apply them: a scope change mid-backfill moves the worklist under your own feet. Say plainly that `coverage-redo` is what applies them. |
 | `coverage-redo` | The full path. Walk this ledger from the stamp forward, apply `auto`, fold `sign-off` into the one manifest confirmation, re-stamp when they land. |
 | `coverage-init` | Not applicable (greenfield). It stamps the current version, which is what makes the first later upgrade a delta. |
 
-State the finding in one line, not a lecture: "This repo is on kit 0.9.0, current is 0.13.0; N
+State the finding in one line, not a lecture: "This repo is on kit 0.9.0, current is 0.15.0; N
 entries apply, run `coverage-redo`". If the state is `current`, say nothing at all.
 
+**The `auto` half applies itself.** `report.sh` invokes `kit-sync.py` before collecting: it installs
+the current tool copies into `.claude/coverage/tools/`, applies the `auto` manifest entries as
+comment-preserving text edits, re-stamps `kit_version:`, and prints one line per change with a
+reminder to commit them (CI runs the committed copies, not your kit checkout). It deliberately does
+NOT touch classifications, exclusions, the floor, `latent_bugs`, or any workflow file, and it prints
+nothing when a repo is already current. `KIT_AUTO_UPDATE=0` opts out; `--check` previews. A repo with
+no kit checkout in sight (CI) is a silent no-op.
+
 ---
+
+## v0.16.0 Kit updates install themselves, and the coverage job runs only for PRs to master
+
+**Detect:** `.claude/coverage/tools/kit-sync.py` is absent, OR the coverage workflow's `coverage` job
+has no `if:` narrowing label events.
+
+**Apply:** two mechanical changes.
+
+1. Install `kit-sync.py` alongside the other tools and let `report.sh` call it. From then on, a repo
+   picks up a new kit by running its own report: tool copies refresh, `auto` manifest entries apply,
+   `kit_version:` re-stamps. Before this, every kit release needed a manual copy per repo, so repos
+   silently ran gates whose bugs were already fixed upstream.
+2. Narrow the workflow's label triggers. `pull_request` + `branches: [master]` already restricts the
+   base branch, but `types:` includes `labeled`/`unlabeled`, so adding ANY label to a PR (`bug`,
+   `wip`) fired a full build + test + coverage pass. The job now carries an `if:` that skips label
+   events unless the label is `coverage-scope-change`. `kit-sync` reports trigger drift but never
+   edits a workflow: rewriting someone's CI unasked is worse than telling them.
+
+**Gate:** `auto`. Neither change touches what is measured, and the sync applies only the entries
+already classified `auto`.
+
+## v0.15.0 The test run decides red or green; coverage checks report by default
+
+**Detect:** the manifest's `gate:` block has no `enforce:` key. (With the key absent the new gate
+already behaves as report-only, so this migration is about making the choice explicit and visible in
+the manifest, not about changing behavior twice.)
+
+**Apply:** add `enforce:` to `gate:`. Write down what this repo actually wants:
+
+- `enforce: false` (the default) coverage breaches are reported and the run stays green. Only a build
+  failure or a failing test turns CI red.
+- `enforce: [diff]` the usual middle ground: new and changed code must be tested, with no ratchet
+  flapping on a floor that has no headroom.
+- `enforce: true` all three checks (ratchet, diff, scope) fail the run, which is the pre-0.15.0
+  behavior.
+
+Say plainly in the closing report which one landed, and say what it costs: with `diff` unenforced,
+nothing mechanical requires a test for new code, and the suite stays green precisely BECAUSE untested
+code keeps it green. The thresholds become an aim that reviewers, not CI, have to hold.
+
+If the repo's overlay (`.claude/coverage/refs/unit-testing.md`) claims the gate is blocking, or its
+README/branch protection describes a required coverage check, update that prose in the same pass. A
+document that promises enforcement the gate no longer performs is worse than no document.
+
+**Gate:** split, and the split is the point. Writing `enforce: false` is `auto`: it is the explicit
+form of what an absent key already does, so `kit-sync` applies it and no behavior moves. ARMING any
+check (`[diff]`, `true`) is `sign-off`, because it changes whether CI can fail, which is a policy
+decision and never a silent one. Nothing here can arm a check on a repo's behalf.
+
+## v0.14.0 Adding a test is not a scope change
+
+**Detect:** the installed `.claude/coverage/tools/coverage-gate.py` has no `is_test_source`.
+Equivalently, a PR whose only new file is a test failed the gate with `new file under excluded path
+(non-product): <SomethingTests.cs>` and needed the `coverage-scope-change` label to go green.
+
+**Apply:** refresh the installed tool copies. The scope-change guard now skips added files it
+recognizes as test code (directory segment `test`/`tests`, `Foo.Tests`, `unit-tests`,
+`UserServiceTests`) and reports the count it ignored instead of failing. The guard exists to catch
+PRODUCT code landing under an excluded path; since every repo excludes its own test sources from the
+denominator, the old behavior demanded reviewer sign-off for the ordinary act of adding a test, which
+trains reviewers to rubber-stamp the one check that stops real logic being reclassified as untestable.
+Nothing in the manifest has to change. If this repo keeps tests somewhere the directory heuristic
+misses (a `Spec/` folder, tests beside the code they cover), set `gate.test_path_patterns` to the
+matching globs; leave it absent otherwise.
+
+**Gate:** `auto`. Measurement, exclusions, floor and diff coverage are untouched: this removes a
+false positive in one guard and never widens what that guard lets through for product code.
 
 ## v0.13.0 Drift detects itself, and frozen bugs survive the parallel backfill
 

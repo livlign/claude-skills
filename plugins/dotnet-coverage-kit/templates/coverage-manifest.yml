@@ -75,10 +75,44 @@ scope:
   vendored_paths: []   # e.g. ["sharedlib", "base-infra-kafka", "shared-asset-lib"]
 
 gate:
+  # WHICH CHECKS MAY FAIL CI. Default (absent or false): NONE of them.
+  #
+  # Everything below is still measured and reported on every run; `enforce` decides only whether a
+  # breach turns the run red. Out of the box the run is red when the TEST RUN is red (build failure
+  # or a failing test), never because a coverage number moved.
+  #
+  # Know what you are choosing. With `diff` unenforced, nothing mechanical requires a test for new
+  # code, and the suite stays green precisely BECAUSE untested code keeps it green: the thresholds
+  # below become an aim, and holding to them is a review responsibility rather than a mechanical one.
+  # Re-arm per check as the repo is ready, e.g.:
+  #   enforce: [diff]              # new/changed code must be tested; no ratchet flapping
+  #   enforce: [diff, scope]       # ...and the skip-list cannot grow unreviewed
+  #   enforce: true                # all three (ratchet, diff, scope)
+  # `--enforce` on the CLI overrides this, so CI can enforce more than a local run.
+  enforce: false
+
   # Set to `target` so changed lines enter at the goal on every PR (per-PR enforcement of target).
+  # Advisory unless `enforce` includes `diff`.
   diff_coverage_min_c0: 95    # % of changed lines that must be covered in a PR
   diff_coverage_min_c1: 85
-  ratchet: true               # total coverage must not drop below baseline.recorded_overall
+  ratchet: true               # compare total coverage against baseline.recorded_overall
+                              # (`ratchet: false` skips the comparison entirely; `enforce` decides
+                              #  whether a drop is merely reported or fails the run)
+
+  # ESCAPE HATCH for the scope-change guard's test detection, normally left empty.
+  #
+  # The guard fails a PR that lands new source under an excluded path. Test code is exempt, because
+  # every repo excludes its own tests from the measured denominator, so a PR that merely ADDS an
+  # xUnit file would otherwise demand reviewer sign-off, which teaches reviewers to rubber-stamp the
+  # one check that stops real logic being reclassified as untestable.
+  #
+  # Detection is by directory segment: "test"/"tests", `Foo.Tests`, `unit-tests`, `UserServiceTests`.
+  # That covers standard .NET layouts. Add globs here ONLY for a layout it misses, e.g. tests kept
+  # in a `Spec/` folder or beside the code they cover.
+  #   e.g. ["**/Spec/**", "**/*Spec.cs"]
+  # A pattern here exempts matching paths from the SCOPE guard only: diff coverage and the ratchet
+  # are untouched. Pointing it at product code hides real scope reductions.
+  test_path_patterns: []
 
 # Maps assemblies / path globs to report categories. For clean-architecture repos this
 # carries real structure; for flat or legacy repos, map everything to "uncategorized".

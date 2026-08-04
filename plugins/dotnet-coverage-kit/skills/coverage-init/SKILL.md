@@ -392,6 +392,11 @@ State the branch and commit you initialized against in the step 11 report, so th
      (which does not run Claude Code) can invoke it at a stable path, identical to local runs.
    - `.claude/coverage/tools/coverage-gate.py` — copied from the kit's `scripts/`. The in-scope
      join + gate + Unit Test Report CI runs after `run-coverage.sh` (needs Python + PyYAML).
+   - `.claude/coverage/tools/kit-sync.py` — copied from the kit's `scripts/`. Committed. Run by
+     `report.sh` before every collection: it installs newer tool copies from the kit and applies the
+     `auto` manifest migrations, so a later kit release reaches this repo by running its own report
+     instead of waiting for someone to copy files by hand. It never applies a `sign-off` migration
+     and never edits a workflow.
    - `.claude/coverage/tools/report.sh` — copied from the kit's `scripts/`. One-command wrapper
      (collect + gate + write a dated `reports/<YYYY-MM-DD>/` with `REPORT.{md,html}` + generated
      `CANNOT-TEST.md`, one folder per run). It resolves `../refs` and `../reports`
@@ -513,4 +518,5 @@ State the branch and commit you initialized against in the step 11 report, so th
 - `${CLAUDE_PLUGIN_ROOT}/scripts/run-coverage.sh`
 - `${CLAUDE_PLUGIN_ROOT}/scripts/coverage-gate.py`
 - `${CLAUDE_PLUGIN_ROOT}/scripts/report.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/kit-sync.py`
 - `${CLAUDE_PLUGIN_ROOT}/workflows/coverage-sweep.workflow.js`

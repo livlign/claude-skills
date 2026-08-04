@@ -217,18 +217,29 @@ already exists it leaves it alone, and if a workflow already runs your tests on 
 `master` it proposes adding the two coverage steps to that one instead of creating a second
 job — so you never pay for duplicate test runs.
 
-### Enforcing it on every change
+### Checking it on every change
 
-The CI job runs the **full gate** on each PR to `master`:
+The CI job measures three things on each PR to `master` and publishes them to the PR summary:
 - **Diff coverage** — the lines you added or changed must be tested (threshold in the manifest).
-  This is what actually forces new code to have tests; the ratchet alone is too weak for small
-  PRs.
+  This is the only check that really forces new code to have tests; the ratchet alone is too
+  weak for small PRs.
 - **Ratchet** — overall in-scope coverage can't drop below the baseline.
 - **Scope-change guard** — you can't quietly dodge the gate by growing the skip-list or dropping
-  new code into an excluded folder; that fails the check until a maintainer adds the
-  `coverage-scope-change` label to approve it.
+  new **product** code into an excluded folder; that flags the PR until a maintainer adds the
+  `coverage-scope-change` label to approve it. Added test files are exempt (adding a test is the
+  opposite of a scope reduction), so the label stays a rare, meaningful signal.
 
-Two setup steps make this binding, not advisory:
+**Which of them can fail the build is your choice, and the default is none.** `gate.enforce` in
+the manifest ships empty, so out of the box CI is red for a build failure or a failing test and
+nothing else; breaches are reported and named `ADVISORY` in the log. Arm checks as the repo is
+ready: `enforce: [diff]`, `enforce: [diff, scope]`, or `enforce: true` for all three (CI can
+enforce more than a local run, via `--enforce`).
+
+Be deliberate about it. While `diff` is unenforced, nothing mechanical requires a test for new
+code: the suite stays green precisely *because* untested code keeps it green, and the thresholds
+are an aim that reviewers have to hold rather than a rule CI applies.
+
+Two setup steps make an armed check binding rather than decorative:
 1. **Make the coverage check required.** In *Settings → Branches → branch protection for
    `master`*, require the Coverage status check to pass before merging. Without this, a red gate
    doesn't actually block the merge.
@@ -240,6 +251,39 @@ Developers get the same gate locally before pushing: `BASE=origin/master ./.clau
 Want the full browsable HTML report too? Upload `coverage/html` as a build artifact
 (`actions/upload-artifact`). Want per-line annotations on changed code and history over
 time? Send `coverage/merged.cobertura.xml` to a hosted service like Codecov or Coveralls.
+
+## Updating the kit
+
+Each repo carries its own committed copies of the tools under `.claude/coverage/tools/`, because CI
+runs those, not your plugin checkout. Keeping them current is automatic: `report.sh` runs
+`kit-sync.py` before collecting, which
+
+- installs any tool script whose content differs from the kit,
+- applies the `auto` migrations from `MIGRATIONS.md` to `coverage-manifest.yml` as text edits that
+  preserve its comments,
+- re-stamps `kit_version:`,
+- and prints one `[kit-sync]` line per change, ending with a reminder to commit them.
+
+So pulling a new kit version reaches a repo the next time anyone runs a report there. Nothing is
+silent: an up-to-date repo prints nothing, and a changed repo tells you exactly what moved.
+
+What it will not do: apply a `sign-off` migration (anything that could move the measured scope, the
+floor, or the exclusion set), arm a gate check on your behalf, or edit a workflow file. Those are
+named as pending and left to `coverage-redo` or to you.
+
+```
+python .claude/coverage/tools/kit-sync.py --repo . --check   # preview, writes nothing
+KIT_AUTO_UPDATE=0 ./.claude/coverage/tools/report.sh         # skip the sync for one run
+KIT_ROOT=/path/to/dotnet-coverage-kit ...                    # point at the kit once; remembered after
+```
+
+Finding the kit needs no setup in the normal case: it looks at `$KIT_ROOT` / `$CLAUDE_PLUGIN_ROOT`,
+then the usual plugin install locations under `~/.claude/`, and it records whatever it resolves in
+`~/.claude/dotnet-coverage-kit-root` so later runs in any repo find it instantly. That file holds a
+machine-specific absolute path, which is why it lives in your home directory and not in the repo.
+
+It also checks that the coverage workflow runs only for pull requests into the production branch and
+reports any extra trigger it finds.
 
 ## Rolling out to many services
 

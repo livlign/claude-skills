@@ -22,8 +22,9 @@ The whole report is one wrapper — no arguments needed (it auto-detects the `.s
 
 It collects coverage, joins it against the manifest, and **writes a dated per-run folder
 `.claude/coverage/reports/<YYYY-MM-DD>/` containing `REPORT.md`, `REPORT.html`, and
-`CANNOT-TEST.md`**, then prints the Markdown and exits non-zero if the ratchet fails (so it
-doubles as a local gate). Each run writes its own dated folder rather than overwriting a fixed
+`CANNOT-TEST.md`**, then prints the Markdown. It exits non-zero only for a check named in the
+manifest's `gate.enforce` (empty by default, so a breach prints as `ADVISORY` and the script still
+succeeds); a failing build or test run is fatal regardless, from `run-coverage.sh`. Each run writes its own dated folder rather than overwriting a fixed
 path, so prior dates are preserved for comparison; override the date with `REPORT_DATE=YYYY-MM-DD`
 to re-emit under a specific day. `CANNOT-TEST.md` is generated from the manifest `cannot_test`
 entries (grouped by blocking construct, each row citing target, reason, and unlock), not
@@ -45,10 +46,11 @@ don't re-derive numbers by hand.
    a note saying so. **Surface it in one line and name `coverage-redo` as what applies it. Do not
    apply any migration here**: a report that quietly changed the measured scope would make its own
    numbers unreproducible. The one exception is the stale-tool-copy refresh below, which changes no
-   classification. See `${CLAUDE_PLUGIN_ROOT}/MIGRATIONS.md` ("Preflight"). If
-   `KIT_VERSION` is behind `${CLAUDE_PLUGIN_ROOT}/scripts/coverage-gate.py`, the repo's copies
-   under `.claude/coverage/tools/` are stale: say so and offer to refresh them, because a
-   half-updated copy can run the whole suite and only then fail. If `FILE_FILTER` lacks an
+   classification. See `${CLAUDE_PLUGIN_ROOT}/MIGRATIONS.md` ("Preflight"). Stale
+   tool copies no longer need asking about: `report.sh` runs `kit-sync.py` first, which installs the
+   current copies and applies the `auto` manifest entries, printing `[kit-sync]` lines for each. Relay
+   those lines and remind the user to COMMIT the changed files, since CI runs the committed copies and
+   not their kit checkout. If the sync printed nothing, the repo was already current. If `FILE_FILTER` lacks an
    exclusion for a shared directory that is present in the repo, stop and fix
    `scope.vendored_paths` before trusting the number.
 
@@ -118,11 +120,21 @@ The full per-file drill-down lives in the HTML report — the Markdown is the ex
 
 ## Approving a scope change (reviewer sign-off)
 
+Read this only while `scope` is one of the enforced checks (`gate.enforce` in the manifest). With
+enforcement off, a scope breach is reported as `ADVISORY`, the run is green, and no label is needed
+or useful; review the reported breach on its merits instead.
+
 The `coverage-scope-change` label is the reviewer sign-off for an intentional scope reduction. It
 maps to `coverage-gate.py --allow-scope-change`. Applying it waives only the **scope-change guard**
-(grown `exclusions`/`cannot_test`, new source under an excluded path) and a **lowered ratchet
-floor**. It does NOT waive diff coverage on changed lines, nor a genuine ratchet drop below the
-recorded floor. Those still fail the gate.
+(grown `exclusions`/`cannot_test`, new **product** source under an excluded path) and a **lowered
+ratchet floor**. It does NOT waive diff coverage on changed lines, nor a genuine ratchet drop below
+the recorded floor. Those still fail the gate.
+
+**A PR that only adds tests never needs this label.** The guard skips added test files and reports
+how many it ignored. If it flags one anyway, the repo is on a kit older than 0.14.0 (refresh
+`.claude/coverage/tools/`) or its tests sit somewhere the directory heuristic misses, which is what
+`gate.test_path_patterns` is for. Reaching for the label there is the wrong fix: it waives the whole
+guard for that PR, including any real scope reduction riding along with it.
 
 To sign off, **ADD the label** (its name must be exactly `coverage-scope-change`). This is where a
 real reviewer got stuck, so state it plainly:

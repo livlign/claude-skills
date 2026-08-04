@@ -2,17 +2,18 @@
 """
 coverage-gate: join a ReportGenerator Cobertura report against the repo's
 coverage-manifest.yml, compute IN-SCOPE (Adjusted) coverage, emit the Unit Test Report
-(Markdown), and enforce the gate.
+(Markdown), and report the gate checks.
 
 In-scope = every source file NOT matched by a manifest `exclusions` pattern. Exclusions
 are checked first; remaining files are bucketed by `category_map` (unmatched -> uncategorized).
 The excluded buckets are removed from the denominator, per rules/coverage-report.base.md.
 
-Gate (all enforced when applicable):
+Checks (always MEASURED; whether a breach FAILS the run is set by `gate.enforce` / --enforce,
+which defaults to NONE, so by default only a failing build or test run is red):
 - Ratchet: Adjusted (in-scope) C0/C1 must not drop below baseline.recorded_overall.
 - Diff coverage (PR mode, --base given): changed in-scope lines must meet the manifest minimums.
-- Scope-change guard (PR mode): growth of `exclusions`/`cannot_test`, or new source under an
-  excluded path, fails unless --allow-scope-change is passed.
+- Scope-change guard (PR mode): growth of `exclusions`/`cannot_test`, or new product source under
+  an excluded path, is flagged unless --allow-scope-change is passed.
 
 Exit codes: 0 = pass, 1 = gate fail, 2 = usage/parse error.
 
@@ -38,13 +39,13 @@ except ImportError:
 
 # Bumped whenever the installed tools/ scripts change in a way a repo should pick
 # up. report.sh prints it, so a stale copy in a repo is visible without diffing.
-KIT_VERSION = "2.0.0"
+KIT_VERSION = "2.3.0"
 
 # The PLUGIN version these scripts ship with (KIT_VERSION above tracks the script contract; this
 # tracks the kit release, and is bumped alongside .claude-plugin/plugin.json). It exists so that any
 # run can compare itself against the manifest's `kit_version:` stamp and say "this repo has not been
 # brought up to the current kit yet" without anyone having to remember to ask. See MIGRATIONS.md.
-KIT_SEMVER = "0.13.0"
+KIT_SEMVER = "0.16.0"
 
 # Section 7's heading text, used both to emit the heading and to build the banner's jump anchor via
 # _slug(). One constant so the link and the target cannot drift apart.
@@ -333,6 +334,68 @@ def parse_cobertura(path):
 
 def match(path, pattern):
     return fnmatch.fnmatch(path, pattern.replace("**", "*"))
+
+
+# WHICH CHECKS MAY FAIL CI. Default: none of them.
+#
+# The gate measures and reports exactly as before; what changed is who decides red vs green. A run
+# is red when the TEST RUN is red (`run-coverage.sh` fails the build or a failing `dotnet test`), not
+# when a coverage number moves. Ratchet/diff/scope breaches are reported as ADVISORY and exit 0.
+#
+# Be clear-eyed about the trade: with `diff` unenforced, nothing mechanical requires a test for new
+# code, and the suite stays green precisely BECAUSE untested code keeps it green. Re-arm per check
+# via `gate.enforce` in the manifest (`true`, or a list like `[diff]`) or `--enforce` on the CLI.
+_ENFORCE_CHECKS = ("ratchet", "diff", "scope")
+_ENFORCE_ALL = ("all", "true", "yes", "1")
+_ENFORCE_NONE = ("", "none", "false", "no", "0", "off")
+
+
+def resolve_enforcement(m, cli_value):
+    """Set of gate checks allowed to fail CI. CLI wins over the manifest; absent means none."""
+    raw = cli_value if cli_value is not None else (m.get("gate") or {}).get("enforce", False)
+    if raw is True:
+        return set(_ENFORCE_CHECKS)
+    if raw is False or raw is None:
+        return set()
+    items = [x.strip().lower() for x in (raw.split(",") if isinstance(raw, str) else [str(x) for x in raw])]
+    items = [x for x in items if x]
+    if len(items) == 1 and items[0] in _ENFORCE_ALL:
+        return set(_ENFORCE_CHECKS)
+    if not items or (len(items) == 1 and items[0] in _ENFORCE_NONE):
+        return set()
+    unknown = [x for x in items if x not in _ENFORCE_CHECKS]
+    if unknown:
+        print("coverage-gate: unknown gate.enforce value(s) %s; valid: %s, true, false"
+              % (", ".join(repr(u) for u in unknown), ", ".join(_ENFORCE_CHECKS)), file=sys.stderr)
+        sys.exit(2)
+    return set(items)
+
+
+# A test project directory segment: exactly "test"/"tests", separator-prefixed (`Foo.Tests`,
+# `unit-tests`), or CamelCase-suffixed (`UserServiceTests`). The CamelCase arm is case-SENSITIVE on
+# purpose so an ordinary word ending in "test" ("Latest", "Manifest") is not mistaken for a test
+# folder.
+_TEST_SEG_RE = re.compile(r"^(?:[Tt]ests?|.*[._\- ][Tt]ests?|.*[a-z0-9]Tests?)$")
+
+
+def is_test_source(path, extra_patterns=()):
+    """True when a repo-relative path is TEST code rather than product code.
+
+    Used by the scope-change guard, which exists to catch PRODUCT code landing under an excluded
+    path. Test code is never a scope reduction: every repo excludes its own test sources from the
+    measured denominator (`**/Tests/**` and friends), so without this a PR that merely ADDS an
+    xUnit file trips the guard and demands reviewer sign-off. That trains reviewers to rubber-stamp
+    the one check that stops someone reclassifying real logic as untestable, which is worse than
+    the false positive itself.
+
+    Detection is by DIRECTORY segment (a .NET test file always lives in a test project), plus any
+    repo-specific globs from the manifest's `gate.test_path_patterns` for layouts this misses.
+    """
+    p = path.replace("\\", "/")
+    for pat in extra_patterns or ():
+        if match(p, pat):
+            return True
+    return any(_TEST_SEG_RE.match(seg) for seg in p.split("/")[:-1])
 
 
 def pct(cov, tot):
@@ -813,6 +876,11 @@ def main():
     ap.add_argument("--needs-attention-top", type=int, default=15)
     ap.add_argument("--base", help="base git ref to diff against; enables diff-coverage + scope-change (PR mode).")
     ap.add_argument("--allow-scope-change", action="store_true")
+    ap.add_argument("--enforce",
+                    help="comma-separated checks allowed to FAIL the run: ratchet, diff, scope "
+                         "(also `all` / `none`). Overrides the manifest's `gate.enforce`. Default is "
+                         "none: every breach is reported as advisory and the exit code stays 0, so "
+                         "only a failing test run turns CI red.")
     ap.add_argument("--test-results-dir", help="dir containing .trx files for the Test Results section")
     ap.add_argument("--repo-name", help="repo name for the report header")
     ap.add_argument("--html", help="also write the report as a self-contained HTML file at this path")
@@ -1091,10 +1159,19 @@ def main():
             grew_excl = len(exclusions) - len((bm.get("exclusions") or []) + vendored_exclusions(bm))
             grew_ct = len(cannot_test) - len(bm.get("cannot_test") or [])
             new_excluded = []
+            added_tests = 0
+            test_globs = gate.get("test_path_patterns") or []
             for gp in added_files(args.base):
+                # Adding a test is the OPPOSITE of a scope reduction, but a new test file always
+                # lands under the repo's own test exclusion. Count it and move on.
+                if is_test_source(gp, test_globs):
+                    added_tests += 1
+                    continue
                 for ex in exclusions:
                     if match(gp, ex["pattern"]):
                         new_excluded.append((gp, ex["category"])); break
+            tests_note = ("  (%d added test file%s ignored: test code is not product scope)"
+                          % (added_tests, "" if added_tests == 1 else "s")) if added_tests else ""
             if grew_excl > 0 or grew_ct > 0 or new_excluded:
                 scope_fail = not args.allow_scope_change
                 gate_lines.append("- **Scope change** %s"
@@ -1105,10 +1182,18 @@ def main():
                     gate_lines.append("  - `cannot_test` grew by %d vs base" % grew_ct)
                 for gp, cat in new_excluded[:10]:
                     gate_lines.append("  - new file under excluded path (`%s`): `%s`" % (cat, short(gp)))
+                if tests_note:
+                    gate_lines.append("  - %s" % tests_note.strip())
             else:
-                gate_lines.append("- **Scope change**: none ✅")
+                gate_lines.append("- **Scope change**: none ✅%s" % tests_note)
 
-    gate_failed = ratchet_fail or diff_fail or scope_fail
+    # Enforcement is decided here, AFTER every check has run: the measurement is unconditional, only
+    # the exit code is configurable. A breach in a check that is not enforced is reported as advisory.
+    enforce = resolve_enforcement(m, args.enforce)
+    breaches = [n for n, f in (("ratchet", ratchet_fail), ("diff", diff_fail), ("scope", scope_fail)) if f]
+    enforced_breaches = [n for n in breaches if n in enforce]
+    advisory_breaches = [n for n in breaches if n not in enforce]
+    gate_failed = bool(enforced_breaches)
     gate_active = (ratchet_on and floor_c0 is not None) or bool(args.base)
 
     # ---- header facts (tool/system sourced, not model) ----
@@ -1124,7 +1209,12 @@ def main():
     out.append("# Unit Test Report — %s\n" % repo)
     out.append("**Commit:** %s  **Branch:** %s  **Date:** %s  " % (sha, branch, now))
     out.append("**Tooling:** %s  " % args.tooling)
-    out.append("**Adjusted coverage:** C0 %.1f%% / C1 %.1f%%\n" % (c0, c1))
+    out.append("**Adjusted coverage:** C0 %.1f%% / C1 %.1f%%  " % (c0, c1))
+    # State the enforcement mode in the artifact people actually read. A report whose numbers look
+    # like a gate, but whose checks cannot fail anything, must say so on its face.
+    out.append("**Enforced checks:** %s\n" % (
+        ", ".join(sorted(enforce)) if enforce
+        else "none (report only: coverage breaches do not fail the run; a failing test run still does)"))
 
     # Red-suite banner: coverage measured with failing tests is unreliable, and a baseline must
     # never be recorded off it (see the generate-tests promotion gate). Surface it loudly at the top
@@ -1523,9 +1613,16 @@ def main():
     # Gate outcome to stderr only (CI logs / local terminal) — kept out of the report body so the
     # report stays a quality view, not a pass/fail exam. The exit code is what actually enforces.
     if gate_active:
-        print("\n[coverage-gate] %s" % ("PASS" if not gate_failed else "FAIL"), file=sys.stderr)
+        verdict = "FAIL (enforced: %s)" % ", ".join(enforced_breaches) if gate_failed else "PASS"
+        print("\n[coverage-gate] %s" % verdict, file=sys.stderr)
         for g in gate_lines:
             print("[coverage-gate] " + g.replace("✅", "").replace("❌", "").replace("⚠️", "WARNING:").replace("**", "").strip().lstrip("- "), file=sys.stderr)
+        # Name every breach that was seen and deliberately not enforced. Silence here would read as
+        # "nothing was wrong", which is how an advisory check stops being read at all.
+        if advisory_breaches:
+            print("[coverage-gate] ADVISORY: %s breached but NOT enforced, so the run stays green. "
+                  "Arm with `gate.enforce` in the manifest, or --enforce."
+                  % ", ".join(advisory_breaches), file=sys.stderr)
     sys.exit(1 if gate_failed else 0)
 
 

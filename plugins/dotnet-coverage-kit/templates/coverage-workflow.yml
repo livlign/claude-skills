@@ -1,6 +1,11 @@
 # .github/workflows/coverage.yml
 # Scaffolded by coverage-init. Runs the SAME run-coverage.sh + coverage-gate.py you run locally, so
-# the PR sees exactly what you see. Gate = diff coverage + ratchet + scope guard.
+# the PR sees exactly what you see.
+#
+# WHAT MAKES THIS JOB RED. By default: a build failure or a failing test, nothing else. Coverage
+# breaches (diff coverage, ratchet, scope guard) are measured and reported on every run, but they
+# only fail the job for the checks listed in the manifest's `gate.enforce` (or a `--enforce` argument
+# on the gate step below), which ships empty. Arm them per check when the repo is ready.
 #
 # Fill every <PLACEHOLDER>. Two blocks are for PRIVATE repos and are clearly marked:
 #   * "PRIVATE NuGet feed (AWS CodeArtifact)"  : delete if your feed is public or not CodeArtifact.
@@ -33,6 +38,14 @@ permissions:
 
 jobs:
   coverage:
+    # ONLY PRs into the production branch reach this job, and only for events that can change the
+    # verdict. `branches:` above already restricts the base branch; this narrows the label events,
+    # which GitHub cannot filter by label name in the trigger. Without it, adding ANY label to a PR
+    # (`bug`, `wip`, anything) re-runs a full build + test + coverage pass for no new information.
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled'
+       || github.event.label.name == 'coverage-scope-change')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,10 +149,13 @@ jobs:
       - name: Coverage
         run: ./.claude/coverage/tools/run-coverage.sh <solution.sln> ./coverage .claude/coverage/refs/coverage.runsettings "${{ steps.filter.outputs.value }}"
 
-      # Full gate: ratchet + diff coverage on changed lines + scope-change guard. Publishes the
-      # report to the PR summary and FAILS the job on any gate breach.
+      # Ratchet + diff coverage on changed lines + scope-change guard, all measured and published to
+      # the PR summary. Whether a breach FAILS the job is decided by the manifest's `gate.enforce`
+      # (empty by default, so this step reports and exits 0). To enforce in CI only, add e.g.
+      # `--enforce diff` to the command below.
       # A maintainer can intentionally reduce scope by adding the 'coverage-scope-change' label to
-      # the PR; the 'labeled' trigger above makes that re-run the gate automatically.
+      # the PR; the 'labeled' trigger above makes that re-run the gate automatically. That label
+      # matters only while `scope` is enforced.
       - name: Coverage gate
         # base_ref is passed via env (not interpolated into the shell) to avoid script injection;
         # coverage-gate.py additionally allowlists the ref before it reaches git.

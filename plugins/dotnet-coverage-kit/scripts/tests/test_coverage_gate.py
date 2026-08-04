@@ -10,6 +10,11 @@ no live-repo coverage otherwise:
   - section 6 split into 6a (design debt) / 6b (structural)
   - category-alias normalization (framework_mismatch -> framework-mismatch, requires-seam -> requires-source-change)
   - systematic-seam cluster callout (>=3 entries sharing Guid.NewGuid)
+  - kit-sync: refreshes stale tool copies + `auto` manifest migrations, preserves the
+    manifest's comments, is idempotent, and never rewrites a workflow
+  - scope-change guard: added TEST files are ignored (a PR that only adds tests must stay green),
+    while added product code under an excluded path still fails. Runs the gate over a throwaway
+    git repo, since the guard only engages with --base.
 
 Run:  python3 scripts/tests/test_coverage_gate.py
 Exit: 0 = pass (or SKIP if PyYAML unavailable and can't be installed), 1 = a failure.
@@ -150,6 +155,291 @@ def check(name, cond, out):
     return 1
 
 
+# --- scope-change guard fixture (needs a real git repo, so it gets its own tempdir) -------------
+SCOPE_MANIFEST = MANIFEST + """  - pattern: "**/Tests/**"
+    category: non-product
+    reason: "Test code"
+"""
+
+
+def _git(d, *a):
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@t")
+    return subprocess.run(["git"] + list(a), cwd=d, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+
+
+def _write(d, rel, body):
+    p = os.path.join(d, rel.replace("/", os.sep))
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "w").write(body)
+
+
+def scope_guard_checks():
+    """Adding a test file must not trip the scope-change guard.
+
+    The guard exists to catch PRODUCT code landing under an excluded path. Every repo excludes its
+    own test sources, so before this was fixed a PR that merely ADDED an xUnit file failed CI and
+    demanded the `coverage-scope-change` label, which trains reviewers to rubber-stamp the one check
+    that stops real logic being reclassified as untestable.
+    """
+    fails = 0
+    with tempfile.TemporaryDirectory() as d:
+        if _git(d, "init", "-q", "-b", "master").returncode != 0:
+            print("  SKIP  scope guard: git unavailable")
+            return 0
+        os.makedirs(os.path.join(d, "trx"))
+        _write(d, "trx/r.trx", TRX)
+        _write(d, "cobertura.xml", COBERTURA)
+        _write(d, "manifest.yml", SCOPE_MANIFEST)
+        _write(d, "src/App/Application/OrderService.cs", "// base\n")
+        _git(d, "add", "-A"); _git(d, "commit", "-qm", "base")
+        _git(d, "checkout", "-q", "-b", "pr")
+
+        def run():
+            # The gate verdict lines go to stderr (stdout is the Markdown report), so read both.
+            p = subprocess.run(
+                [sys.executable, os.path.abspath(GATE),
+                 "--cobertura", "cobertura.xml", "--manifest", "manifest.yml",
+                 "--test-results-dir", "trx", "--repo-name", "fixture", "--base", "master"],
+                cwd=d, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            return p.stdout + p.stderr
+
+        # 1. Test files only: the guard must pass and say what it ignored.
+        _write(d, "src/Tests/ServiceTests/UserServiceTests/VpiSettingChangeLogTests.cs", "// test\n")
+        _write(d, "src/App.UnitTests/OrderServiceTests.cs", "// test\n")
+        _git(d, "add", "-A"); _git(d, "commit", "-qm", "add tests")
+        out = run()
+        blob = "\n".join(l for l in out.splitlines() if "Scope change" in l) or out
+        fails += check("scope guard: added tests do not trip it",
+                       "Scope change" in blob and "none" in blob, blob)
+        fails += check("scope guard: ignored count reported", "2 added test files ignored" in blob, blob)
+        fails += check("scope guard: gate not failed by added tests", "[coverage-gate] PASS" in out, out)
+
+        # 2. Product code under an excluded path still trips it, test files notwithstanding.
+        _write(d, "src/App/Infrastructure/NewRepoService.cs", "// product\n")
+        _git(d, "add", "-A"); _git(d, "commit", "-qm", "add excluded product file")
+        out2 = run()
+        fails += check("scope guard: excluded product file still flagged",
+                       "new file under excluded path" in out2 and "NewRepoService.cs" in out2, out2)
+        fails += check("scope guard: test file not reported as new excluded source",
+                       "VpiSettingChangeLogTests.cs" not in out2, out2)
+    return fails
+
+
+def enforcement_checks():
+    """Default is report-only: a real breach is reported, named ADVISORY, and still exits 0.
+
+    The fixture's floor (C0 10 / C1 0) is deliberately raised above the measured 20%/0% so the
+    ratchet genuinely breaches; the only difference between the two runs is `--enforce`.
+    """
+    fails = 0
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "trx"))
+        _write(d, "trx/r.trx", TRX)
+        _write(d, "cobertura.xml", COBERTURA)
+        # Floor above what the fixture achieves => ratchet breach.
+        _write(d, "manifest.yml", MANIFEST.replace("c0: 10.0", "c0: 99.0").replace("c1: 0.0", "c1: 99.0"))
+
+        def run(*extra):
+            p = subprocess.run(
+                [sys.executable, os.path.abspath(GATE), "--cobertura", "cobertura.xml",
+                 "--manifest", "manifest.yml", "--test-results-dir", "trx",
+                 "--repo-name", "fixture"] + list(extra),
+                cwd=d, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            return p.returncode, p.stdout + p.stderr
+
+        rc, out = run()
+        fails += check("enforce: breach does not fail by default", rc == 0, out)
+        fails += check("enforce: breach still reported", "Ratchet" in out and "FAIL" in out, out)
+        fails += check("enforce: advisory line names the check",
+                       "ADVISORY: ratchet breached but NOT enforced" in out, out)
+        fails += check("enforce: report header states report-only",
+                       "**Enforced checks:** none (report only" in out, out)
+
+        rc_on, out_on = run("--enforce", "ratchet")
+        fails += check("enforce: --enforce ratchet fails the run", rc_on == 1, out_on)
+        fails += check("enforce: verdict names the enforced check",
+                       "FAIL (enforced: ratchet)" in out_on, out_on)
+        fails += check("enforce: header lists armed checks", "**Enforced checks:** ratchet" in out_on, out_on)
+
+        rc_other, out_other = run("--enforce", "diff")
+        fails += check("enforce: arming a different check leaves this breach advisory",
+                       rc_other == 0 and "ADVISORY: ratchet" in out_other, out_other)
+
+        rc_man, out_man = run()
+        _write(d, "manifest.yml", MANIFEST.replace("c0: 10.0", "c0: 99.0")
+               .replace("c1: 0.0", "c1: 99.0").replace("ratchet: true", "ratchet: true\n  enforce: true"))
+        rc_man2, out_man2 = run()
+        fails += check("enforce: manifest gate.enforce: true fails the run",
+                       rc_man == 0 and rc_man2 == 1, out_man2)
+
+        rc_bad, out_bad = run("--enforce", "nonsense")
+        fails += check("enforce: unknown value is rejected, not silently ignored",
+                       rc_bad == 2 and "unknown gate.enforce value" in out_bad, out_bad)
+    return fails
+
+
+SYNC = os.path.join(os.path.dirname(__file__), "..", "kit-sync.py")
+
+STALE_MANIFEST = """schema_version: 1
+
+# COMMENT SENTINEL: a manifest is mostly comments and they must survive a migration.
+target:
+  c0: 95
+gate:
+  # comment inside gate
+  diff_coverage_min_c0: 95
+  ratchet: true
+exclusions:
+  - pattern: "**/Migrations/**"
+    category: generated
+    reason: "generated"
+"""
+
+BAD_WORKFLOW = """name: Coverage
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    types: [opened]
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./.claude/coverage/tools/run-coverage.sh
+"""
+
+
+GOOD_WORKFLOW = """name: Coverage
+on:
+  pull_request:
+    branches: [master]
+    types: [opened]
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./.claude/coverage/tools/run-coverage.sh
+"""
+
+
+def sync_checks():
+    """kit-sync must update a stale repo, keep manifest comments, and be idempotent.
+
+    It must also refuse to do the dangerous half: no sign-off migration, no workflow rewrite. A sync
+    that silently reclassified code or edited CI would be worse than no sync at all.
+    """
+    import yaml
+    fails = 0
+    kit = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, ".claude/coverage/refs/coverage-manifest.yml", STALE_MANIFEST)
+        _write(d, ".claude/coverage/tools/coverage-gate.py", "# stale copy")
+        _write(d, ".github/workflows/coverage.yml", BAD_WORKFLOW)
+        wf_before = open(os.path.join(d, ".github", "workflows", "coverage.yml")).read()
+
+        def run(*extra):
+            p = subprocess.run([sys.executable, os.path.abspath(SYNC), "--repo", d,
+                                "--kit", kit] + list(extra),
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
+            return p.returncode, p.stdout + p.stderr
+
+        rc, out = run("--check")
+        man_after_check = open(os.path.join(d, ".claude/coverage/refs/coverage-manifest.yml".replace("/", os.sep))).read()
+        fails += check("sync: --check writes nothing", man_after_check == STALE_MANIFEST, out)
+        fails += check("sync: --check still reports the work", "update .claude/coverage/tools/coverage-gate.py" in out, out)
+
+        rc, out = run()
+        gate_dst = os.path.join(d, ".claude/coverage/tools/coverage-gate.py".replace("/", os.sep))
+        man = open(os.path.join(d, ".claude/coverage/refs/coverage-manifest.yml".replace("/", os.sep)), encoding="utf-8").read()
+        fails += check("sync: report.sh install signals re-exec (exit 10)", rc == 10, out)
+        fails += check("sync: stale tool copy replaced", "is_test_source" in open(gate_dst, encoding="utf-8").read(), out)
+        fails += check("sync: kit-sync installs itself", os.path.isfile(os.path.join(d, ".claude/coverage/tools/kit-sync.py".replace("/", os.sep))), out)
+        fails += check("sync: manifest comments preserved", "COMMENT SENTINEL" in man and "# comment inside gate" in man, man)
+        fails += check("sync: gate.enforce added", "enforce: false" in man, man)
+        fails += check("sync: kit_version stamped", 'kit_version: "' in man, man)
+        fails += check("sync: migrated manifest is valid YAML", yaml.safe_load(man) is not None, man)
+        fails += check("sync: enforcement stays off after migration",
+                       (yaml.safe_load(man)["gate"]["enforce"]) is False, man)
+        fails += check("sync: exclusions untouched",
+                       len(yaml.safe_load(man)["exclusions"]) == 1, man)
+        fails += check("sync: reminds the user to commit", "COMMIT these files" in out, out)
+
+        # Workflow: reported, never rewritten.
+        fails += check("sync: flags non-PR trigger", "triggers besides pull_request (push)" in out, out)
+        fails += check("sync: flags missing base-branch filter",
+                       "pull_request has no `branches:` filter" in out, out)
+        fails += check("sync: does NOT rewrite the workflow",
+                       open(os.path.join(d, ".github", "workflows", "coverage.yml")).read() == wf_before, out)
+
+        # A second run copies nothing and migrates nothing. The workflow notes DO repeat, because the
+        # fixture workflow is still wrong: a real problem must not go quiet just because it was
+        # mentioned once.
+        rc2, out2 = run()
+        did_write = [l for l in out2.splitlines() if " update " in l or " install " in l or "manifest" in l]
+        fails += check("sync: second run copies and migrates nothing", rc2 == 0 and not did_write, out2)
+        fails += check("sync: an unfixed workflow is reported every run",
+                       "triggers besides pull_request" in out2, out2)
+
+        # With the workflow corrected there is nothing left to say, and --quiet says nothing.
+        _write(d, ".github/workflows/coverage.yml", GOOD_WORKFLOW)
+        rc3, out3 = run("--quiet")
+        fails += check("sync: --quiet prints nothing when current and clean",
+                       rc3 == 0 and out3.strip() == "", repr(out3))
+
+        rc4 = subprocess.run([sys.executable, os.path.abspath(SYNC), "--repo", d, "--kit",
+                              os.path.join(d, "nope")], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace").returncode
+        fails += check("sync: bogus --kit falls back to this kit, no crash", rc4 in (0, 10), str(rc4))
+
+    # The pointer file is what lets a bare `report.sh` in any repo find the kit with no environment
+    # set up, which is the whole premise of the auto-update. Exercised against a throwaway HOME so the
+    # test never writes to the real one.
+    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as d2:
+        _write(d2, ".claude/coverage/refs/coverage-manifest.yml", STALE_MANIFEST)
+        env = dict(os.environ, HOME=home, USERPROFILE=home)
+        env.pop("KIT_ROOT", None)
+        env.pop("CLAUDE_PLUGIN_ROOT", None)
+
+        def run_env(*extra):
+            p = subprocess.run([sys.executable, os.path.abspath(SYNC), "--repo", d2] + list(extra),
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               env=env)
+            return p.returncode, p.stdout + p.stderr
+
+        run_env("--kit", kit)
+        pointer = os.path.join(home, ".claude", "dotnet-coverage-kit-root")
+        fails += check("sync: resolved kit path is remembered", os.path.isfile(pointer), pointer)
+        if os.path.isfile(pointer):
+            fails += check("sync: pointer holds the kit root",
+                           open(pointer, encoding="utf-8").read().strip() == os.path.abspath(kit),
+                           open(pointer, encoding="utf-8").read())
+        rc5, out5 = run_env()   # no --kit, no env: must resolve via the pointer
+        fails += check("sync: later run resolves with no hints",
+                       "no kit checkout found" not in out5, out5)
+        fails += check("sync: --check does not write the pointer",
+                       run_env("--check")[0] == 0, "check mode")
+    return fails
+
+
+def unit_checks():
+    """is_test_source: directory-segment detection, and the words it must NOT mistake for tests."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(GATE)))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cg", os.path.abspath(GATE))
+    cg = importlib.util.module_from_spec(spec); spec.loader.exec_module(cg)
+    fails = 0
+    for p in ("src/Tests/Foo/BarTests.cs", "tests/App.Tests/BarTests.cs",
+              "src/App.UnitTests/BarTests.cs", "src/unit-tests/Bar.cs", "src/Test/Bar.cs"):
+        fails += check("is_test_source: %s" % p, cg.is_test_source(p), p)
+    for p in ("src/App/Latest/Bar.cs", "src/App/Manifest/Bar.cs", "src/App/Service/TestData.cs",
+              "src/App/Infrastructure/RepoService.cs"):
+        fails += check("is_test_source: NOT %s" % p, not cg.is_test_source(p), p)
+    fails += check("is_test_source: manifest glob override",
+                   cg.is_test_source("src/App/Spec/BarSpec.cs", ["**/Spec/**"]), "override")
+    return fails
+
+
 def main():
     if not ensure_pyyaml():
         print("SKIP: PyYAML not available and could not be installed; skipping gate render test.")
@@ -169,7 +459,7 @@ def main():
             [sys.executable, os.path.abspath(GATE),
              "--cobertura", cob, "--manifest", man, "--test-results-dir", "trx",
              "--repo-name", "fixture"],
-            cwd=d, capture_output=True, text=True)
+            cwd=d, capture_output=True, text=True, encoding="utf-8", errors="replace")
         out = r.stdout
 
         # Baseline floor (C0 10 / C1 0) sits at or below the fixture's Adjusted, so the ratchet
@@ -201,14 +491,14 @@ def main():
                 [sys.executable, os.path.abspath(GATE),
                  "--cobertura", cob, "--manifest", man2, "--test-results-dir", "trx",
                  "--repo-name", "fixture"],
-                cwd=d, capture_output=True, text=True).stdout
+                cwd=d, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
 
         def drift_state(extra_manifest_lines):
             man2 = os.path.join(d, "m3.yml")
             open(man2, "w").write(MANIFEST + extra_manifest_lines)
             return subprocess.run(
                 [sys.executable, os.path.abspath(GATE), "--manifest", man2, "--print-kit-drift"],
-                cwd=d, capture_output=True, text=True).stdout.split()
+                cwd=d, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.split()
 
         cur = drift_state("")
         behind_out = rerun_with('\nkit_version: "0.4.0"\n')
@@ -224,6 +514,11 @@ def main():
                        and drift_state('\nkit_version: "%s"\n' % cur[2])[0] == "current"
                        and drift_state('\nkit_version: "99.0.0"\n')[0] == "ahead",
                        " ".join(drift_state("")))
+
+        fails += unit_checks()
+        fails += enforcement_checks()
+        fails += scope_guard_checks()
+        fails += sync_checks()
 
         if fails:
             print("\n%d check(s) FAILED (gate exit %d)" % (fails, r.returncode))

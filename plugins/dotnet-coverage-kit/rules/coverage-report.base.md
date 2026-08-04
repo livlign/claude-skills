@@ -73,11 +73,13 @@ dropped from the report; the only thing exclusions change is what counts toward 
 A file moving from target into an `exclusions` pattern shrinks the Adjusted denominator —
 allowed only with a manifest reason, never silently, so exclusions cannot inflate Adjusted.
 
-## The merge gate (run locally by the developer, then enforced on CI per PR)
+## The merge checklist (run locally by the developer, then re-run on CI per PR)
 
 The developer runs these same checks locally while writing or editing code, so coverage
 problems are caught before the PR is opened. CI then runs the identical checks on the PR
-and blocks the merge if any fail — local is the fast feedback loop, CI is the backstop.
+and reports them on the PR — local is the fast feedback loop, CI is the backstop. Whether a
+failing check also BLOCKS the merge is set per check by the manifest's `gate.enforce`, which is
+empty by default: measure and report always, fail the build only where the repo asked for it.
 
 1. Pull the production branch into the feature branch and resolve conflicts there first.
 2. Full suite green on the merged result.
@@ -94,17 +96,32 @@ and blocks the merge if any fail — local is the fast feedback loop, CI is the 
 5. **Scope-change guard**: a PR cannot silently dodge the gate by growing `exclusions` /
    `cannot_test`, by landing new source under an excluded path, **or by lowering the recorded
    floor** (`baseline.recorded_overall`). Removing or reducing the floor counts as a scope
-   reduction. Any such change fails the gate unless a maintainer signs off (the
+   reduction. Any such change is flagged, and fails the run when `scope` is enforced, unless a
+   maintainer signs off (the
    `coverage-scope-change` PR label / the gate's `--allow-scope-change`). Reducing scope is
-   allowed only with a documented, reviewed reason.
+   allowed only with a documented, reviewed reason. **Added test files do not count**: every repo
+   excludes its own test sources, so counting them would demand sign-off for the ordinary act of
+   adding a test and teach reviewers to apply the label without reading it. The gate detects test
+   paths by directory segment (`test`/`tests`, `Foo.Tests`, `UserServiceTests`); an unusual layout
+   is declared in `gate.test_path_patterns`.
 
-All of these are enforced mechanically by `scripts/coverage-gate.py` (installed at
+All of these are measured mechanically by `scripts/coverage-gate.py` (installed at
 `.claude/coverage/tools/coverage-gate.py`), which CI runs after `run-coverage.sh`. Given `--base
-<target>` it diffs the changed lines, intersects them with the Cobertura per-line hits, and
-fails when changed in-scope coverage is below threshold (check 3) or scope was reduced without
-sign-off (check 5); the ratchet (check 4) is always enforced when a floor is recorded. Without
-`--base` (a plain local report) only the ratchet applies. **Enforcement is only real if the
-check is a required status check on the protected branch** — otherwise the gate is advisory.
+<target>` it diffs the changed lines and intersects them with the Cobertura per-line hits (checks 3
+and 5); the ratchet (check 4) is computed whenever a floor is recorded. Without `--base` (a plain
+local report) only the ratchet applies.
+
+**What turns a measurement into a gate** is `gate.enforce` in the manifest (or `--enforce` on the
+CLI): the named checks (`ratchet`, `diff`, `scope`) exit 1 on breach, and everything else is printed
+as `ADVISORY` with exit 0. The key ships empty, so by default only a failing build or a failing test
+makes CI red. Two consequences to be honest about:
+
+- While `diff` is unenforced, nothing mechanical requires a test for new code. A green suite does not
+  mean the change was tested: it stays green precisely BECAUSE untested code keeps it green. The
+  threshold is then a review obligation, not a rule, and this section is the checklist a reviewer
+  runs by hand.
+- An enforced check still only blocks a merge if it is a **required status check** on the protected
+  branch. Enforcement plus branch protection is what makes it binding; either alone is advisory.
 
 Pre-existing failures unrelated to the change: confirm they already fail on a clean
 production branch, state that explicitly, do not let them block, and never introduce a
