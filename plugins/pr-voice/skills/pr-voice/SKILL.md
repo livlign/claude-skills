@@ -132,6 +132,8 @@ One line, before drafting:
 - `Co-authored-by:` / `Signed-off-by:` trailers, and an existing generated-by footer if the author put it there.
 - Mentions (`@user`), and anything inside `<!-- -->` that a bot reads.
 
+**Required template sections with no facts behind them** (e.g. "How did you test this?" and nothing shows it was tested): keep the heading, and put a plain placeholder under it — `_Not stated — to fill in._` — and list it in the §4.1 decisions. Never put an `@mention` in a placeholder or a note: once posted it pings that person. Template placeholders that stand for a person (`@username`, `<your name>`) stay exactly as the template has them; filling in an identity is the author's call, same as ticking a box.
+
 **Shape:**
 
 - **Length**: target the `words_by_diff_size` median for the bucket this PR falls into (small < 50 changed lines ≤ medium < 400 ≤ large). Stay inside `p25`–`p75`. If that bucket has `n` < 3, use the overall `body.words`. A one-line typo fix in a repo whose median is 200 words still gets two sentences — length comes from the content first, the profile only bounds it.
@@ -154,6 +156,7 @@ Before showing anything, check the draft against both sources and fix it — don
 - [ ] Every claim maps to a fact-ledger line. Delete anything that doesn't.
 - [ ] No verification claim without a source (§1.3).
 - [ ] Every preserved item from §3.2 is still present.
+- [ ] No `@mention` the author didn't already write; no template identity placeholder filled in.
 - [ ] Title matches the profile's prefix / casing / period / length rules.
 - [ ] Body word count (prose, excluding code blocks) is inside the bucket's `p25`–`p75`, or there's a one-line reason it isn't.
 - [ ] Heading set and order match the profile or the template; no Summary / Changes / Testing unless the repo actually uses those.
