@@ -1,6 +1,6 @@
 # livlign skills
 
-A Claude Code plugin marketplace for open-source maintainers — README heroes, README audits, and trustworthy .NET test-coverage backfills.
+A Claude Code plugin marketplace for open-source maintainers — README heroes, README audits, PR descriptions in your repo's own voice, and trustworthy .NET test-coverage backfills.
 
 ```
 /plugin marketplace add livlign/claude-skills
@@ -14,6 +14,7 @@ A Claude Code plugin marketplace for open-source maintainers — README heroes, 
 |---|---|---|
 | [repo-visuals](./plugins/repo-visuals) | `/plugin install repo-visuals@livlign` | Designs bespoke README hero visuals — animated GIF, static PNG, or animated SVG — through a structured discovery dialog. |
 | [repo-doctor](./plugins/repo-doctor) | `/plugin install repo-doctor@livlign` | Audits a repo's README against best-practice patterns and produces a prioritized P0/P1/P2 punch list of fixes. |
+| [pr-voice](./plugins/pr-voice) | `/plugin install pr-voice@livlign` | Rewrites thin PR descriptions in the repo's own PR voice, learned from its merged history and grounded in the diff. |
 | [dotnet-coverage-kit](./plugins/dotnet-coverage-kit) | `/plugin install dotnet-coverage-kit@livlign` | Backfills characterization + spec unit tests into .NET services and keeps C0/C1 coverage honest via a checked-in manifest and a CI gate. |
 
 ---
@@ -99,6 +100,24 @@ Audits a README the way a senior maintainer would — does the "what is this" se
 ```
 
 [Skill source →](./plugins/repo-doctor)
+
+---
+
+## `pr-voice`
+
+Rewrites a thin or empty PR description the way **this repo** already writes them. It profiles the merged-PR history first — title convention, body length for the diff size, the headings that recur and in what order, how issues get closed — then drafts from the diff, commits, and linked issues only. No invented motivation, no "all tests pass" nobody checked, and nothing the author wrote gets dropped.
+
+**What a run looks like:**
+
+```
+> /pr-voice 42
+  target → PR #42 · +38/−9 · body: "fix"
+  voice  → 31 merged PRs, bots skipped · fix(scope): titles · ~70 words · Why → What
+  draft  → before/after · dropped "Testing" (no evidence tests ran)
+  apply? → gh pr edit 42 ✓
+```
+
+[Plugin source →](./plugins/pr-voice)
 
 ---
 

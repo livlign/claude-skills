@@ -38,7 +38,6 @@ Skill ideas that fit the marketplace's spirit. Open an issue before starting one
 | **Social-card generator** | new | Generate the OG image (`<meta property="og:image">`) so the repo looks right when pasted in chat or shared on socials. Lighter cousin of `repo-visuals`. |
 | **Repo-postcard** | new | A single static image summarizing what the repo does, how to install, and one screenshot — for blog posts and talks. |
 | **README translation** | new | Translate a README into a target language while preserving maintainer voice and code-block fidelity. |
-| **PR-description rewriter** | new | Takes a thin PR body and rewrites it in the repo's existing PR voice (learned from merged history). For solo maintainers shipping fast. |
 | **License/attribution checker** | new | Surfaces missing `LICENSE`, mismatched SPDX headers, undeclared deps behind README's "built with" claims. |
 | **Acknowledgments builder** | new | Generates a "Thanks to" section from contributor history, sponsors, and prior-art repos cited in commits. |
 | **Sunset notice** | new | For archived or abandoned repos: detects staleness, drafts a top-of-README sunset block pointing to the successor or fork. |
