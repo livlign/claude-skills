@@ -1,0 +1,9 @@
+{
+  "name": "pr-voice",
+  "version": "0.1.0",
+  "description": "Rewrites a thin or empty pull-request description in the repo's own PR voice, measured from its merged history (title convention, length per diff size, recurring headings, issue-closing style). Grounded in the diff; never invents testing claims. Applies with gh pr edit only on explicit confirmation.",
+  "author": { "name": "livlign" },
+  "homepage": "https://github.com/livlign/claude-skills",
+  "repository": "https://github.com/livlign/claude-skills",
+  "keywords": ["pull-request", "pr-description", "github", "gh", "maintainer-tools", "open-source", "writing"]
+}

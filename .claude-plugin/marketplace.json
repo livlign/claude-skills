@@ -22,6 +22,13 @@
       "description": "Characterization-test backfill and spec-test enforcement for .NET services. Deterministic C0/C1 coverage via dotnet-coverage, with per-method classification and a checked-in manifest explaining every inclusion, exclusion, and cannot-test entry.",
       "version": "0.13.0",
       "keywords": ["dotnet", "testing", "coverage", "characterization", "xunit"]
+    },
+    {
+      "name": "pr-voice",
+      "source": "./plugins/pr-voice",
+      "description": "Rewrites a thin or empty PR description in the repo's own PR voice, learned from its merged-PR history. Grounded in the actual diff — no invented motivation or testing claims. Before/after preview; applies via gh pr edit only on explicit confirmation.",
+      "version": "0.1.0",
+      "keywords": ["pull-request", "pr-description", "github", "gh", "maintainer-tools", "open-source", "writing"]
     }
   ]
 }
